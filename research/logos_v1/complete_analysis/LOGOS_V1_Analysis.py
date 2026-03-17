@@ -18,6 +18,8 @@
 
 # %% — Cell 1: Imports and Setup
 import json
+import sys
+from pathlib import Path
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -25,13 +27,20 @@ import matplotlib.dates as mdates
 from datetime import datetime, timedelta
 from collections import defaultdict
 
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from antilego.paths import DEFAULT_SNAPSHOT_PATH
+from antilego.signal_visuals import figure_path
+
 plt.rcParams['figure.figsize'] = (12, 6)
 plt.rcParams['font.size'] = 11
 plt.rcParams['axes.grid'] = True
 plt.rcParams['grid.alpha'] = 0.3
 
 # %% — Cell 2: Load Data
-snapshots = [json.loads(line) for line in open("snapshots.jsonl")]
+snapshots = [json.loads(line) for line in DEFAULT_SNAPSHOT_PATH.open(encoding="utf-8")]
 print(f"Loaded {len(snapshots)} snapshots")
 print(f"Time range: {snapshots[0]['timestamp'][:19]} → {snapshots[-1]['timestamp'][:19]} UTC")
 print(f"Families: {len(snapshots[0]['families'])}")
@@ -168,7 +177,7 @@ for ax, family_name in zip(axes, families):
 axes[-1].set_xlabel("Time (UTC)")
 fig.suptitle("LOGOS V1 — Market Family Prices Over Time", fontsize=15, fontweight="bold", y=1.01)
 plt.tight_layout()
-plt.savefig("fig1_price_timeseries.png", dpi=150, bbox_inches="tight")
+plt.savefig(figure_path("fig1_price_timeseries.png"), dpi=150, bbox_inches="tight")
 plt.show()
 print("Saved: fig1_price_timeseries.png")
 
@@ -222,7 +231,7 @@ for bar, rate in zip(bars, summary_df["Rate"]):
 ax.axhline(y=0.5, color="gray", linestyle="--", alpha=0.5, label="50% threshold")
 plt.xticks(rotation=15, ha="right")
 plt.tight_layout()
-plt.savefig("fig2_violation_frequency.png", dpi=150, bbox_inches="tight")
+plt.savefig(figure_path("fig2_violation_frequency.png"), dpi=150, bbox_inches="tight")
 plt.show()
 print("Saved: fig2_violation_frequency.png")
 
@@ -421,7 +430,7 @@ ax.legend(fontsize=9)
 ax.set_ylim(-0.05, 1.1)
 ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
 plt.tight_layout()
-plt.savefig("fig3_violation_rate_time.png", dpi=150, bbox_inches="tight")
+plt.savefig(figure_path("fig3_violation_rate_time.png"), dpi=150, bbox_inches="tight")
 plt.show()
 
 # %% [markdown]
@@ -457,7 +466,7 @@ ax.legend(fontsize=8)
 ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
 
 plt.tight_layout()
-plt.savefig("fig4_inconsistency_magnitude.png", dpi=150, bbox_inches="tight")
+plt.savefig(figure_path("fig4_inconsistency_magnitude.png"), dpi=150, bbox_inches="tight")
 plt.show()
 
 # %% — Cell 12: Magnitude Statistics Table
@@ -551,7 +560,7 @@ ax.set_yticklabels(["Coherent", "Violated"])
 ax.legend(fontsize=9, loc="upper right")
 ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
 plt.tight_layout()
-plt.savefig("fig5_persistence_timeline.png", dpi=150, bbox_inches="tight")
+plt.savefig(figure_path("fig5_persistence_timeline.png"), dpi=150, bbox_inches="tight")
 plt.show()
 
 # %% — Cell 15: NBA Sum Deviation Over Time
@@ -567,7 +576,7 @@ if len(nba) > 0 and nba["price_sum"].notna().any():
     ax.legend()
     ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
 plt.tight_layout()
-plt.savefig("fig6_nba_sum.png", dpi=150, bbox_inches="tight")
+plt.savefig(figure_path("fig6_nba_sum.png"), dpi=150, bbox_inches="tight")
 plt.show()
 
 # %% — Cell 16: Fed Rate Cut Violation Detail
@@ -588,7 +597,7 @@ if len(fed) > 0:
                 fontsize=11, ha="center", color="red", fontweight="bold",
                 bbox=dict(boxstyle="round,pad=0.3", facecolor="lightyellow", edgecolor="red"))
 plt.tight_layout()
-plt.savefig("fig7_fed_violation_detail.png", dpi=150, bbox_inches="tight")
+plt.savefig(figure_path("fig7_fed_violation_detail.png"), dpi=150, bbox_inches="tight")
 plt.show()
 
 # %% [markdown]
