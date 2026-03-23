@@ -15,9 +15,11 @@ python -m antilego.antilego_engine analyze
 python -m antilego.antilego_engine collect
 ```
 
-The first command analyzes `market_archive/snapshots.jsonl`. The second appends one
-public live-price snapshot to the same archive. Neither command uses wallet keys or
-places trades.
+The first command analyzes the historical `market_archive/snapshots.jsonl`. The
+second stores public live-price snapshots under the current week's Monday date,
+for example `archive/2026/08/03/market_data/snapshots.jsonl`. Generated figures
+and reports use sibling `figures/` and `reports/` folders. Neither command uses
+wallet keys or places trades.
 
 Run the automated offline checks with:
 

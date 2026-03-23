@@ -8,7 +8,7 @@ from pathlib import Path
 
 from .contradiction_brain import analyze_snapshots, load_snapshots
 from .market_tracking import run_collection
-from .paths import DEFAULT_SNAPSHOT_PATH
+from .paths import DEFAULT_SNAPSHOT_PATH, live_snapshot_path
 
 
 def analyze_archive(path: Path = DEFAULT_SNAPSHOT_PATH) -> dict:
@@ -30,12 +30,13 @@ def main() -> None:
     analyze = subparsers.add_parser("analyze", help="analyze saved snapshots")
     analyze.add_argument("--input", type=Path, default=DEFAULT_SNAPSHOT_PATH)
     collect = subparsers.add_parser("collect", help="collect public live prices")
-    collect.add_argument("--output", type=Path, default=DEFAULT_SNAPSHOT_PATH)
+    collect.add_argument("--output", type=Path)
     args = parser.parse_args()
 
     if args.command == "collect":
         run_collection(args.output)
-        print(f"Saved one live snapshot to {args.output.resolve()}")
+        output_path = args.output if args.output is not None else live_snapshot_path()
+        print(f"Saved one live snapshot to {output_path.resolve()}")
         return
 
     summary = analyze_archive(args.input)

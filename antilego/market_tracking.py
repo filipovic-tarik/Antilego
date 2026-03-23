@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Callable, Iterable
 
 from .market_families import FAMILIES
-from .paths import DEFAULT_SNAPSHOT_PATH, ensure_output_directories
+from .paths import ensure_output_directories, live_snapshot_path
 
 CLOB_BASE_URL = "https://clob.polymarket.com"
 PriceFetcher = Callable[[str], float | None]
@@ -61,9 +61,9 @@ def collect_snapshot(
     return snapshot
 
 
-def append_snapshot(snapshot: dict, output_path: Path = DEFAULT_SNAPSHOT_PATH) -> Path:
+def append_snapshot(snapshot: dict, output_path: Path | None = None) -> Path:
     """Append one snapshot to JSONL and return the resolved output path."""
-    output_path = Path(output_path)
+    output_path = Path(output_path) if output_path is not None else live_snapshot_path()
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with output_path.open("a", encoding="utf-8") as output:
         output.write(json.dumps(snapshot, separators=(",", ":")) + "\n")
@@ -71,12 +71,13 @@ def append_snapshot(snapshot: dict, output_path: Path = DEFAULT_SNAPSHOT_PATH) -
 
 
 def run_collection(
-    output_path: Path = DEFAULT_SNAPSHOT_PATH,
+    output_path: Path | None = None,
     interval_minutes: float = 0,
     count: int = 1,
 ) -> list[dict]:
     """Collect one or more snapshots; ``count=0`` continues until interrupted."""
     ensure_output_directories()
+    output_path = Path(output_path) if output_path is not None else live_snapshot_path()
     collected = []
     iteration = 0
     while count == 0 or iteration < count:
@@ -96,7 +97,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Antilego public market collector")
     parser.add_argument("--loop", type=float, default=0, metavar="MINUTES")
     parser.add_argument("-n", "--count", type=int, default=1)
-    parser.add_argument("-o", "--output", type=Path, default=DEFAULT_SNAPSHOT_PATH)
+    parser.add_argument("-o", "--output", type=Path)
     args = parser.parse_args()
     try:
         snapshots = run_collection(args.output, args.loop, args.count)
@@ -108,7 +109,8 @@ def main() -> None:
             family["violation_count"] for family in snapshot["families"]
         )
         print(f"{snapshot['timestamp']}: {violations} violation(s)")
-    print(f"Saved to {args.output.resolve()}")
+    output_path = args.output if args.output is not None else live_snapshot_path()
+    print(f"Saved to {output_path.resolve()}")
 
 
 if __name__ == "__main__":

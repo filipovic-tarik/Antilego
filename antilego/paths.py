@@ -1,5 +1,6 @@
 """Canonical filesystem locations used throughout Antilego."""
 
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 
@@ -7,11 +8,47 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 MARKET_ARCHIVE_DIR = PROJECT_ROOT / "market_archive"
 DEFAULT_SNAPSHOT_PATH = MARKET_ARCHIVE_DIR / "snapshots.jsonl"
 INTELLIGENCE_REPORTS_DIR = PROJECT_ROOT / "intelligence_reports"
-FIGURES_DIR = INTELLIGENCE_REPORTS_DIR / "figures" / "logos_v1"
-REPORTS_DIR = INTELLIGENCE_REPORTS_DIR / "reports" / "logos_v1"
+ARCHIVE_DIR = PROJECT_ROOT / "archive"
 
 
-def ensure_output_directories() -> None:
-    """Create the writable data and reporting directories when needed."""
-    for directory in (MARKET_ARCHIVE_DIR, FIGURES_DIR, REPORTS_DIR):
+def week_bounds(value: date | datetime | None = None) -> tuple[date, date]:
+    """Return the Monday and Sunday containing ``value``."""
+    if value is None:
+        value = date.today()
+    if isinstance(value, datetime):
+        value = value.date()
+    monday = value - timedelta(days=value.weekday())
+    return monday, monday + timedelta(days=6)
+
+
+def weekly_archive_dir(value: date | datetime | None = None) -> Path:
+    """Return an archive path named with the week's Monday date."""
+    monday, _ = week_bounds(value)
+    return ARCHIVE_DIR / f"{monday.year:04d}" / f"{monday.month:02d}" / f"{monday.day:02d}"
+
+
+def weekly_figures_dir(value: date | datetime | None = None) -> Path:
+    return weekly_archive_dir(value) / "figures"
+
+
+def weekly_market_data_dir(value: date | datetime | None = None) -> Path:
+    return weekly_archive_dir(value) / "market_data"
+
+
+def weekly_reports_dir(value: date | datetime | None = None) -> Path:
+    return weekly_archive_dir(value) / "reports"
+
+
+def live_snapshot_path(value: date | datetime | None = None) -> Path:
+    return weekly_market_data_dir(value) / "snapshots.jsonl"
+
+
+def ensure_output_directories(value: date | datetime | None = None) -> None:
+    """Create the historical and current weekly output directories."""
+    for directory in (
+        MARKET_ARCHIVE_DIR,
+        weekly_figures_dir(value),
+        weekly_market_data_dir(value),
+        weekly_reports_dir(value),
+    ):
         directory.mkdir(parents=True, exist_ok=True)
