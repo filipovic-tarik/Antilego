@@ -24,7 +24,7 @@ def week_bounds(value: date | datetime | None = None) -> tuple[date, date]:
 def weekly_archive_dir(value: date | datetime | None = None) -> Path:
     """Return an archive path named with the week's Monday date."""
     monday, _ = week_bounds(value)
-    return ARCHIVE_DIR / f"{monday.year:04d}" / f"{monday.month:02d}" / f"{monday.day:02d}"
+    return ARCHIVE_DIR / monday.isoformat()
 
 
 def weekly_figures_dir(value: date | datetime | None = None) -> Path:
