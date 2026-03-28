@@ -5,9 +5,6 @@ from pathlib import Path
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-MARKET_ARCHIVE_DIR = PROJECT_ROOT / "market_archive"
-DEFAULT_SNAPSHOT_PATH = MARKET_ARCHIVE_DIR / "snapshots.jsonl"
-INTELLIGENCE_REPORTS_DIR = PROJECT_ROOT / "intelligence_reports"
 ARCHIVE_DIR = PROJECT_ROOT / "archive"
 
 
@@ -43,10 +40,12 @@ def live_snapshot_path(value: date | datetime | None = None) -> Path:
     return weekly_market_data_dir(value) / "snapshots.jsonl"
 
 
+DEFAULT_SNAPSHOT_PATH = live_snapshot_path()
+
+
 def ensure_output_directories(value: date | datetime | None = None) -> None:
-    """Create the historical and current weekly output directories."""
+    """Create the current weekly Antilego output directories."""
     for directory in (
-        MARKET_ARCHIVE_DIR,
         weekly_figures_dir(value),
         weekly_market_data_dir(value),
         weekly_reports_dir(value),
