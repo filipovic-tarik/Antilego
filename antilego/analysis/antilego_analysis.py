@@ -1,16 +1,16 @@
 # %% [markdown]
-# # LOGOS V1: Logical Optimization for Global Outcome Systems
+# # ANTILEGO: Probability Consistency Engine
 # **Detecting Logical Inconsistencies in Polymarket Prediction Markets**
 #
-# *Authors: Caleb Mukasa & [Partner Name]*
-# *Date: March 2026*
+# *Authors: Caleb Mukasa & Tarik Filipovic*
+# *Active Antilego research workspace*
 #
 # ---
 #
 # ## Abstract
 #
-# LOGOS tests whether prediction markets obey their own implied probability logic.
-# We monitor 58 contracts across 5 market families on Polymarket, checking whether
+# Antilego tests whether prediction markets obey their own implied probability logic.
+# We monitor configured families of related Polymarket contracts, checking whether
 # observed prices satisfy fundamental probability constraints: monotonicity for nested
 # events and additivity for mutually exclusive outcomes. Using convex optimization,
 # we compute the nearest coherent probability system and measure the frequency,
@@ -27,7 +27,7 @@ import matplotlib.dates as mdates
 from datetime import datetime, timedelta
 from collections import defaultdict
 
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
@@ -41,6 +41,19 @@ plt.rcParams['grid.alpha'] = 0.3
 
 # %% — Cell 2: Load Data
 snapshots = [json.loads(line) for line in DEFAULT_SNAPSHOT_PATH.open(encoding="utf-8")]
+for snapshot in snapshots:
+    snapshot["families"] = [
+        family
+        for family in snapshot.get("families", [])
+        if family.get("markets")
+        and all(market.get("price") is not None for market in family["markets"])
+    ]
+snapshots = [snapshot for snapshot in snapshots if snapshot["families"]]
+if not snapshots:
+    raise RuntimeError(
+        f"No complete market families were found in {DEFAULT_SNAPSHOT_PATH}. "
+        "Refresh the active market definitions and collect live data first."
+    )
 print(f"Loaded {len(snapshots)} snapshots")
 print(f"Time range: {snapshots[0]['timestamp'][:19]} → {snapshots[-1]['timestamp'][:19]} UTC")
 print(f"Families: {len(snapshots[0]['families'])}")
@@ -58,7 +71,7 @@ for f in snapshots[0]['families']:
 # 2. **Normalization**: $P(\Omega) = 1$
 # 3. **Additivity**: For mutually exclusive events, $P(A \cup B) = P(A) + P(B)$
 #
-# From these axioms, we derive the constraints LOGOS checks:
+# From these axioms, we derive the constraints Antilego checks:
 #
 # **Monotonicity (nested events):** If $A \subseteq B$, then $P(A) \leq P(B)$
 # - *Threshold chains*: Hitting \$100k requires hitting \$85k first → $P(\uparrow 85k) \geq P(\uparrow 100k)$
@@ -69,7 +82,7 @@ for f in snapshots[0]['families']:
 #
 # ### Optimization Formulation
 #
-# For each family with observed prices $p^{obs}$, LOGOS computes the nearest coherent
+# For each family with observed prices $p^{obs}$, Antilego computes the nearest coherent
 # vector $p^*$ by solving:
 #
 # $$\min_{p} \sum_i (p_i - p_i^{obs})^2$$
@@ -175,7 +188,7 @@ for ax, family_name in zip(axes, families):
     ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
 
 axes[-1].set_xlabel("Time (UTC)")
-fig.suptitle("LOGOS V1 — Market Family Prices Over Time", fontsize=15, fontweight="bold", y=1.01)
+fig.suptitle("ANTILEGO — Market Family Prices Over Time", fontsize=15, fontweight="bold", y=1.01)
 plt.tight_layout()
 plt.savefig(figure_path("fig1_price_timeseries.png"), dpi=150, bbox_inches="tight")
 plt.show()
@@ -221,7 +234,7 @@ fig, ax = plt.subplots(figsize=(10, 5))
 colors = ["#2ecc71" if r < 0.1 else "#f39c12" if r < 0.5 else "#e74c3c" for r in summary_df["Rate"]]
 bars = ax.bar(summary_df["Family"], summary_df["Rate"], color=colors, edgecolor="white", linewidth=1.5)
 ax.set_ylabel("Fraction of Snapshots with Violations")
-ax.set_title("LOGOS V1 — Violation Frequency by Family", fontsize=14, fontweight="bold")
+ax.set_title("ANTILEGO — Violation Frequency by Family", fontsize=14, fontweight="bold")
 ax.set_ylim(0, 1.1)
 
 for bar, rate in zip(bars, summary_df["Rate"]):
@@ -425,7 +438,7 @@ for family_name in fdf["family"].unique():
 
 ax.set_ylabel("Violation Rate (rolling 1-hour window)")
 ax.set_xlabel("Time (UTC)")
-ax.set_title("LOGOS V1 — Violation Rate Over Time", fontsize=14, fontweight="bold")
+ax.set_title("ANTILEGO — Violation Rate Over Time", fontsize=14, fontweight="bold")
 ax.legend(fontsize=9)
 ax.set_ylim(-0.05, 1.1)
 ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
@@ -554,7 +567,7 @@ for family_name in fdf["family"].unique():
 
 ax.set_ylabel("Violation Active")
 ax.set_xlabel("Time (UTC)")
-ax.set_title("LOGOS V1 — When Are Violations Active?", fontsize=14, fontweight="bold")
+ax.set_title("ANTILEGO — When Are Violations Active?", fontsize=14, fontweight="bold")
 ax.set_yticks([0, 1])
 ax.set_yticklabels(["Coherent", "Violated"])
 ax.legend(fontsize=9, loc="upper right")
@@ -633,7 +646,7 @@ plt.show()
 # 2. **Structural overround**: The NBA market systematically overprices the full
 #    set, which is a known feature of multi-outcome betting markets.
 #
-# LOGOS distinguishes these by measuring both the violation magnitude and the
+# Antilego distinguishes these by measuring both the violation magnitude and the
 # associated market liquidity, enabling researchers to separate meaningful
 # structural breaks from noise.
 #
@@ -653,7 +666,7 @@ plt.show()
 
 # %% — Cell 17: Final Summary
 print("\n" + "=" * 70)
-print("LOGOS V1 — FINAL SUMMARY")
+print("ANTILEGO — FINAL SUMMARY")
 print("=" * 70)
 print(f"\nData: {len(snapshots)} snapshots over ~{len(snapshots)*5/60:.1f} hours")
 print(f"Markets monitored: 58 across 5 families")
@@ -661,6 +674,6 @@ print(f"\nViolation rates:")
 for _, row in summary_df.iterrows():
     print(f"  {row['Family']:<25} {row['Rate']:>6.1%}  (max magnitude: {row['Max Magnitude']:.4f})")
 print(f"\nConclusion: Polymarket prediction markets frequently violate basic")
-print(f"probability logic, particularly in low-liquidity contracts. LOGOS")
+print(f"probability logic, particularly in low-liquidity contracts. Antilego")
 print(f"detects these violations in real-time and computes the nearest")
 print(f"coherent probability system using convex optimization.")
