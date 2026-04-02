@@ -4,7 +4,7 @@ Antilego — Market Family Definitions
 These are the curated market families used by the active Antilego engine.
 Each family has a type, a list of markets (with asset IDs), and a constraint.
 
-The initial definitions were independently preserved in the Foundation Codex.
+The initial definitions were independently preserved in the Foundational Artifact.
 """
 
 FAMILIES = [

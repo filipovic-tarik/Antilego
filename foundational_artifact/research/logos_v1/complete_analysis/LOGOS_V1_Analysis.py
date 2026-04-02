@@ -26,14 +26,14 @@ import matplotlib.dates as mdates
 from datetime import datetime, timedelta
 from collections import defaultdict
 
-CODEX_ROOT = Path(__file__).resolve().parents[3]
-DEFAULT_SNAPSHOT_PATH = CODEX_ROOT / "historical_data" / "snapshots.jsonl"
-CODEX_FIGURES_DIR = CODEX_ROOT / "published_outputs" / "figures" / "logos_v1"
+ARTIFACT_ROOT = Path(__file__).resolve().parents[3]
+DEFAULT_SNAPSHOT_PATH = ARTIFACT_ROOT / "historical_data" / "snapshots.jsonl"
+ARTIFACT_FIGURES_DIR = ARTIFACT_ROOT / "published_outputs" / "figures" / "logos_v1"
 
 
 def figure_path(filename):
-    CODEX_FIGURES_DIR.mkdir(parents=True, exist_ok=True)
-    return CODEX_FIGURES_DIR / filename
+    ARTIFACT_FIGURES_DIR.mkdir(parents=True, exist_ok=True)
+    return ARTIFACT_FIGURES_DIR / filename
 
 plt.rcParams['figure.figsize'] = (12, 6)
 plt.rcParams['font.size'] = 11

@@ -1,11 +1,11 @@
-# The Foundation Codex
+# The Foundational Artifact
 
-The Foundation Codex preserves LOGOS, the original research project from which
+The Foundational Artifact preserves LOGOS, the original research project from which
 Antilego emerged. It is retained as a complete, respectful record of the ideas,
 experiments, data, analysis, and collaboration that established the project's
 intellectual foundation.
 
-The Codex is historical source material, not part of the active Antilego runtime.
+The Artifact is historical source material, not part of the active Antilego runtime.
 Its contents should remain faithful to their original form. When a foundational
 idea remains valuable, Antilego receives an independent copy that can evolve
 without rewriting the historical record.
@@ -21,6 +21,6 @@ without rewriting the historical record.
 
 ## Preservation principle
 
-Active Antilego code must not import from this directory. The Codex exists so the
+Active Antilego code must not import from this directory. The Artifact exists so the
 foundation is never lost while Antilego develops into a more rigorous, modular,
 and production-oriented system.

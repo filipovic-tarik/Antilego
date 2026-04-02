@@ -28,5 +28,5 @@ python -m unittest discover -s tests
 ```
 
 The active package entry points are the Python modules directly inside `antilego/`.
-Preserved foundational research is isolated from the runtime in
-`antilego/foundation_codex/`.
+Preserved foundational research is isolated from the runtime in the root-level
+`foundational_artifact/` directory.
