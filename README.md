@@ -5,7 +5,7 @@
 # Antilego
 
 Antilego is a read-only probability-consistency engine for prediction markets. It
-collects public Polymarket prices, groups logically related contracts, and flags
+collects public Polymarket prices, groups logically related contracts, and then flags
 deadline, threshold, and mutual exclusivity probability violations.
 
 ## Run the current pipeline
