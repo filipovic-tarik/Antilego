@@ -427,62 +427,10 @@ for family in snapshots[0]["families"]:
 #
 # ### Research Question A: How often are markets incoherent?
 
-# %% — Cell 10: Violation Frequency Over Time
-fig, ax = plt.subplots(figsize=(13, 5))
-
-for family_name in fdf["family"].unique():
-    ff = fdf[fdf["family"] == family_name].sort_values("timestamp")
-    # Rolling violation rate (window of 12 = ~1 hour)
-    rolling = ff["has_violation"].rolling(window=min(12, len(ff)), center=True).mean()
-    ax.plot(ff["timestamp"], rolling, label=family_name, linewidth=2)
-
-ax.set_ylabel("Violation Rate (rolling 1-hour window)")
-ax.set_xlabel("Time (UTC)")
-ax.set_title("ANTILEGO — Violation Rate Over Time", fontsize=14, fontweight="bold")
-ax.legend(fontsize=9)
-ax.set_ylim(-0.05, 1.1)
-ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
-plt.tight_layout()
-plt.savefig(figure_path("fig3_violation_rate_time.png"), dpi=150, bbox_inches="tight")
-plt.show()
-
 # %% [markdown]
 # ### Research Question B: How large are the inconsistencies?
 
-# %% — Cell 11: Inconsistency Score Distribution
-fig, axes = plt.subplots(1, 2, figsize=(14, 5))
-
-# Left: inconsistency score by family
-ax = axes[0]
-families_to_plot = pdf[pdf["inconsistency_score"] > 0.0001]["family"].unique()
-data_for_box = [pdf[(pdf["family"] == f) & (pdf["inconsistency_score"] > 0.0001)]["inconsistency_score"].values
-                for f in families_to_plot]
-bp = ax.boxplot(data_for_box, labels=[f.replace(" ", "\n") for f in families_to_plot],
-                patch_artist=True, widths=0.6)
-colors_box = ["#3498db", "#e74c3c", "#2ecc71", "#f39c12", "#9b59b6"]
-for patch, color in zip(bp["boxes"], colors_box[:len(families_to_plot)]):
-    patch.set_facecolor(color)
-    patch.set_alpha(0.7)
-ax.set_ylabel("Inconsistency Score (L2 norm)")
-ax.set_title("Distribution of Inconsistency Scores", fontsize=12, fontweight="bold")
-
-# Right: inconsistency score over time
-ax = axes[1]
-for family_name in pdf["family"].unique():
-    fp = pdf[pdf["family"] == family_name].sort_values("timestamp")
-    if fp["inconsistency_score"].max() > 0.001:
-        ax.plot(fp["timestamp"], fp["inconsistency_score"], label=family_name, linewidth=1.5, alpha=0.8)
-ax.set_ylabel("Inconsistency Score")
-ax.set_xlabel("Time (UTC)")
-ax.set_title("Inconsistency Score Over Time", fontsize=12, fontweight="bold")
-ax.legend(fontsize=8)
-ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
-
-plt.tight_layout()
-plt.savefig(figure_path("fig4_inconsistency_magnitude.png"), dpi=150, bbox_inches="tight")
-plt.show()
-
-# %% — Cell 12: Magnitude Statistics Table
+# %% — Cell 10: Magnitude Statistics Table
 print("=" * 70)
 print("INCONSISTENCY MAGNITUDE STATISTICS")
 print("=" * 70)
@@ -498,7 +446,7 @@ print(mag_stats.to_string())
 # %% [markdown]
 # ### Research Question C: How long do violations persist?
 
-# %% — Cell 13: Violation Persistence Analysis
+# %% — Cell 11: Violation Persistence Analysis
 print("\n" + "=" * 70)
 print("VIOLATION PERSISTENCE")
 print("=" * 70)
@@ -556,27 +504,7 @@ persist_df = pd.DataFrame(persistence_data)
 print("\n")
 print(persist_df.to_string(index=False))
 
-# %% — Cell 14: Persistence Visualization
-fig, ax = plt.subplots(figsize=(13, 5))
-
-for family_name in fdf["family"].unique():
-    ff = fdf[fdf["family"] == family_name].sort_values("timestamp")
-    if ff["has_violation"].any():
-        ax.fill_between(ff["timestamp"], 0, ff["has_violation"].astype(int),
-                        alpha=0.3, label=family_name, step="post")
-
-ax.set_ylabel("Violation Active")
-ax.set_xlabel("Time (UTC)")
-ax.set_title("ANTILEGO — When Are Violations Active?", fontsize=14, fontweight="bold")
-ax.set_yticks([0, 1])
-ax.set_yticklabels(["Coherent", "Violated"])
-ax.legend(fontsize=9, loc="upper right")
-ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
-plt.tight_layout()
-plt.savefig(figure_path("fig5_persistence_timeline.png"), dpi=150, bbox_inches="tight")
-plt.show()
-
-# %% — Cell 15: NBA Sum Deviation Over Time
+# %% — Cell 12: NBA Sum Deviation Over Time
 fig, ax = plt.subplots(figsize=(13, 4))
 nba = fdf[fdf["family"].str.contains("NBA")].sort_values("timestamp")
 if len(nba) > 0 and nba["price_sum"].notna().any():
@@ -592,7 +520,7 @@ plt.tight_layout()
 plt.savefig(figure_path("fig6_nba_sum.png"), dpi=150, bbox_inches="tight")
 plt.show()
 
-# %% — Cell 16: Fed Rate Cut Violation Detail
+# %% — Cell 13: Fed Rate Cut Violation Detail
 fig, ax = plt.subplots(figsize=(13, 5))
 fed = df[df["family"].str.contains("Fed")].sort_values("timestamp")
 if len(fed) > 0:
@@ -664,7 +592,7 @@ plt.show()
 # - Cross-venue consistency checks (Polymarket vs Kalshi)
 # - Backtesting: do violations predict profitable trades?
 
-# %% — Cell 17: Final Summary
+# %% — Cell 14: Final Summary
 print("\n" + "=" * 70)
 print("ANTILEGO — FINAL SUMMARY")
 print("=" * 70)
