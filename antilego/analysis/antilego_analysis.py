@@ -34,10 +34,14 @@ if str(PROJECT_ROOT) not in sys.path:
 from antilego.paths import DEFAULT_SNAPSHOT_PATH
 from antilego.signal_visuals import figure_path
 
+plt.style.use("dark_background")
 plt.rcParams['figure.figsize'] = (12, 6)
 plt.rcParams['font.size'] = 11
 plt.rcParams['axes.grid'] = True
 plt.rcParams['grid.alpha'] = 0.3
+plt.rcParams['figure.facecolor'] = 'black'
+plt.rcParams['axes.facecolor'] = 'black'
+plt.rcParams['savefig.facecolor'] = 'black'
 
 # %% — Cell 2: Load Data
 snapshots = [json.loads(line) for line in DEFAULT_SNAPSHOT_PATH.open(encoding="utf-8")]
