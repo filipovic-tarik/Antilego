@@ -9,3 +9,18 @@ These files are active Antilego material and may be redesigned freely. They read
 the current weekly snapshot archive and write figures into that same week's
 `figures/` directory. A complete market family is required before it is included
 in analysis, preventing missing live prices from being treated as valid evidence.
+
+## Offline historical graph test
+
+Use the independent March 2026 fixture to regenerate figures without contacting
+Polymarket:
+
+```bash
+python antilego/analysis/antilego_analysis.py \
+  --snapshots tests/fixtures/march_2026_snapshots.jsonl \
+  --figures-dir archive/historical-test/figures \
+  --no-show
+```
+
+The fixture is a preserved copy for active Antilego testing. Runtime code does
+not read from the Foundational Artifact.

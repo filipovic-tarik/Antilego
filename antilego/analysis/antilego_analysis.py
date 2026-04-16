@@ -17,6 +17,7 @@
 # magnitude, and persistence of violations over time.
 
 # %% — Cell 1: Imports and Setup
+import argparse
 import json
 import sys
 from pathlib import Path
@@ -34,6 +35,38 @@ if str(PROJECT_ROOT) not in sys.path:
 from antilego.paths import DEFAULT_SNAPSHOT_PATH
 from antilego.signal_visuals import figure_path
 
+parser = argparse.ArgumentParser(description="Run the Antilego analysis workflow")
+parser.add_argument(
+    "--snapshots",
+    type=Path,
+    default=DEFAULT_SNAPSHOT_PATH,
+    help="JSONL snapshot archive to analyze",
+)
+parser.add_argument(
+    "--figures-dir",
+    type=Path,
+    help="directory for generated figures (defaults to the current weekly archive)",
+)
+parser.add_argument(
+    "--no-show",
+    action="store_true",
+    help="save figures without opening interactive windows",
+)
+args = parser.parse_args()
+SNAPSHOT_PATH = args.snapshots
+FIGURES_DIR = args.figures_dir
+
+
+def output_figure(filename: str) -> Path:
+    return figure_path(filename, FIGURES_DIR)
+
+
+def show_or_close() -> None:
+    if args.no_show:
+        plt.close()
+    else:
+        plt.show()
+
 plt.style.use("dark_background")
 plt.rcParams['figure.figsize'] = (12, 6)
 plt.rcParams['font.size'] = 11
@@ -44,7 +77,7 @@ plt.rcParams['axes.facecolor'] = 'black'
 plt.rcParams['savefig.facecolor'] = 'black'
 
 # %% — Cell 2: Load Data
-snapshots = [json.loads(line) for line in DEFAULT_SNAPSHOT_PATH.open(encoding="utf-8")]
+snapshots = [json.loads(line) for line in SNAPSHOT_PATH.open(encoding="utf-8")]
 for snapshot in snapshots:
     snapshot["families"] = [
         family
@@ -55,8 +88,8 @@ for snapshot in snapshots:
 snapshots = [snapshot for snapshot in snapshots if snapshot["families"]]
 if not snapshots:
     raise RuntimeError(
-        f"No complete market families were found in {DEFAULT_SNAPSHOT_PATH}. "
-        "Refresh the active market definitions and collect live data first."
+        f"No complete market families were found in {SNAPSHOT_PATH}. "
+        "Choose a complete historical fixture or refresh the active market definitions."
     )
 print(f"Loaded {len(snapshots)} snapshots")
 print(f"Time range: {snapshots[0]['timestamp'][:19]} → {snapshots[-1]['timestamp'][:19]} UTC")
@@ -194,8 +227,8 @@ for ax, family_name in zip(axes, families):
 axes[-1].set_xlabel("Time (UTC)")
 fig.suptitle("ANTILEGO — Market Family Prices Over Time", fontsize=15, fontweight="bold", y=1.01)
 plt.tight_layout()
-plt.savefig(figure_path("fig1_price_timeseries.png"), dpi=150, bbox_inches="tight")
-plt.show()
+plt.savefig(output_figure("fig1_price_timeseries.png"), dpi=150, bbox_inches="tight")
+show_or_close()
 print("Saved: fig1_price_timeseries.png")
 
 # %% [markdown]
@@ -248,8 +281,8 @@ for bar, rate in zip(bars, summary_df["Rate"]):
 ax.axhline(y=0.5, color="gray", linestyle="--", alpha=0.5, label="50% threshold")
 plt.xticks(rotation=15, ha="right")
 plt.tight_layout()
-plt.savefig(figure_path("fig2_violation_frequency.png"), dpi=150, bbox_inches="tight")
-plt.show()
+plt.savefig(output_figure("fig2_violation_frequency.png"), dpi=150, bbox_inches="tight")
+show_or_close()
 print("Saved: fig2_violation_frequency.png")
 
 # %% [markdown]
@@ -521,8 +554,8 @@ if len(nba) > 0 and nba["price_sum"].notna().any():
     ax.legend()
     ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
 plt.tight_layout()
-plt.savefig(figure_path("fig6_nba_sum.png"), dpi=150, bbox_inches="tight")
-plt.show()
+plt.savefig(output_figure("fig6_nba_sum.png"), dpi=150, bbox_inches="tight")
+show_or_close()
 
 # %% — Cell 13: Fed Rate Cut Violation Detail
 fig, ax = plt.subplots(figsize=(13, 5))
@@ -542,8 +575,8 @@ if len(fed) > 0:
                 fontsize=11, ha="center", color="red", fontweight="bold",
                 bbox=dict(boxstyle="round,pad=0.3", facecolor="lightyellow", edgecolor="red"))
 plt.tight_layout()
-plt.savefig(figure_path("fig7_fed_violation_detail.png"), dpi=150, bbox_inches="tight")
-plt.show()
+plt.savefig(output_figure("fig7_fed_violation_detail.png"), dpi=150, bbox_inches="tight")
+show_or_close()
 
 # %% [markdown]
 # ---
