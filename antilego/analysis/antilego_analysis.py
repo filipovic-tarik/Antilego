@@ -26,7 +26,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 from datetime import datetime, timedelta
-from collections import defaultdict
+from collections import Counter, defaultdict
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
@@ -201,35 +201,98 @@ print(f"Family-level DataFrame: {len(fdf):,} rows")
 # ---
 # ## 2. Data Overview
 
-# %% — Cell 4: Price Time Series
-families = df["family"].unique()
-n_fam = len(families)
-fig, axes = plt.subplots(n_fam, 1, figsize=(14, 4 * n_fam), sharex=True)
+# %% — Cell 4: Market Status Dashboard
+family_status = fdf.groupby("family")["has_violation"].any()
+all_clear = [name for name in df["family"].unique() if not family_status[name]]
+violating = [name for name in df["family"].unique() if family_status[name]]
+dashboard_rows = max(len(all_clear), len(violating), 1)
 
-for ax, family_name in zip(axes, families):
-    fam = df[df["family"] == family_name]
-    n_markets = fam["label"].nunique()
+fig = plt.figure(figsize=(18, 3.25 * dashboard_rows + 1.0))
+columns = fig.add_gridspec(1, 2, left=0.05, right=0.98, bottom=0.06, top=0.91, wspace=0.13)
+left_grid = columns[0].subgridspec(max(len(all_clear), 1), 1, hspace=0.34)
+right_grid = columns[1].subgridspec(max(len(violating), 1), 1, hspace=0.34)
 
-    # For NBA, only plot top 8 teams
+fig.text(0.255, 0.955, "ALL CLEAR", color="#31d07c", fontsize=18,
+         fontweight="bold", ha="center", va="center")
+fig.text(0.745, 0.955, "VIOLATIONS", color="#ff4d4d", fontsize=18,
+         fontweight="bold", ha="center", va="center")
+
+
+def plot_market_family(ax, family_name, is_violation):
+    family_prices = df[df["family"] == family_name]
     if "NBA" in family_name:
-        top_labels = fam.groupby("label")["price"].mean().nlargest(8).index
-        fam = fam[fam["label"].isin(top_labels)]
+        top_labels = family_prices.groupby("label")["price"].mean().nlargest(8).index
+        family_prices = family_prices[family_prices["label"].isin(top_labels)]
 
-    for label in fam["label"].unique():
-        series = fam[fam["label"] == label].sort_values("timestamp")
+    for label in family_prices["label"].unique():
+        series = family_prices[family_prices["label"] == label].sort_values("timestamp")
         ax.plot(series["timestamp"], series["price"], label=label, linewidth=1.2)
 
-    ax.set_title(family_name, fontsize=13, fontweight="bold")
+    ax.set_title(family_name, fontsize=12, fontweight="bold", pad=8)
     ax.set_ylabel("Probability")
-    ax.legend(fontsize=7, loc="upper right", ncol=2)
+    ax.set_xlabel("Time (UTC)")
+    ax.legend(fontsize=6.5, loc="upper right", ncol=2)
     ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
 
-axes[-1].set_xlabel("Time (UTC)")
-fig.suptitle("ANTILEGO — Market Family Prices Over Time", fontsize=15, fontweight="bold", y=1.01)
-plt.tight_layout()
-plt.savefig(output_figure("fig1_price_timeseries.png"), dpi=150, bbox_inches="tight")
+    family_checks = fdf[fdf["family"] == family_name].sort_values("timestamp")
+    if is_violation:
+        ax.fill_between(
+            family_checks["timestamp"], 0, 1,
+            where=family_checks["has_violation"],
+            transform=ax.get_xaxis_transform(), step="post",
+            color="#ff3030", alpha=0.08,
+        )
+        violation_pairs = [
+            detail["pair"]
+            for details in family_checks["violation_details"]
+            for detail in details
+        ]
+        primary_violation = Counter(violation_pairs).most_common(1)[0][0]
+        violation_rate = family_checks["has_violation"].mean()
+        ax.text(
+            0.015, 0.94,
+            f"VIOLATION: {primary_violation}\nActive in {violation_rate:.1%} of snapshots",
+            transform=ax.transAxes, va="top", ha="left",
+            color="#ff4d4d", fontsize=8.5, fontweight="bold",
+            bbox=dict(boxstyle="round,pad=0.35", facecolor="black",
+                      edgecolor="#ff4d4d", linewidth=1.3),
+        )
+    else:
+        ax.text(
+            0.015, 0.94, "NO VIOLATIONS DETECTED",
+            transform=ax.transAxes, va="top", ha="left",
+            color="#31d07c", fontsize=8.5, fontweight="bold",
+            bbox=dict(boxstyle="round,pad=0.35", facecolor="black",
+                      edgecolor="#31d07c", linewidth=1.3),
+        )
+
+
+if all_clear:
+    for index, family_name in enumerate(all_clear):
+        plot_market_family(fig.add_subplot(left_grid[index]), family_name, False)
+else:
+    empty_axis = fig.add_subplot(left_grid[0])
+    empty_axis.text(0.5, 0.5, "No all-clear families", ha="center", va="center")
+    empty_axis.set_axis_off()
+
+if violating:
+    for index, family_name in enumerate(violating):
+        plot_market_family(fig.add_subplot(right_grid[index]), family_name, True)
+else:
+    empty_axis = fig.add_subplot(right_grid[0])
+    empty_axis.text(0.5, 0.5, "No violations detected", ha="center", va="center")
+    empty_axis.set_axis_off()
+
+fig.suptitle("ANTILEGO — MARKET CONSISTENCY STATUS", fontsize=21,
+             fontweight="bold", y=0.995)
+dashboard_path = output_figure("fig1_market_status_dashboard.png")
+plt.savefig(dashboard_path, dpi=150, bbox_inches="tight", facecolor="black")
+for retired_name in ("fig1_price_timeseries.png", "fig7_fed_violation_detail.png"):
+    retired_path = output_figure(retired_name)
+    if retired_path.exists():
+        retired_path.unlink()
+print(f"Saved: {dashboard_path.name}")
 show_or_close()
-print("Saved: fig1_price_timeseries.png")
 
 # %% [markdown]
 # ---
@@ -557,27 +620,6 @@ plt.tight_layout()
 plt.savefig(output_figure("fig6_nba_sum.png"), dpi=150, bbox_inches="tight")
 show_or_close()
 
-# %% — Cell 13: Fed Rate Cut Violation Detail
-fig, ax = plt.subplots(figsize=(13, 5))
-fed = df[df["family"].str.contains("Fed")].sort_values("timestamp")
-if len(fed) > 0:
-    for label in ["September Meeting", "October Meeting", "December Meeting"]:
-        series = fed[fed["label"] == label].sort_values("timestamp")
-        lw = 2.5 if label in ["September Meeting", "October Meeting"] else 1.5
-        ax.plot(series["timestamp"], series["price"], label=label, linewidth=lw)
-
-    ax.set_ylabel("Probability of Rate Cut by Meeting")
-    ax.set_xlabel("Time (UTC)")
-    ax.set_title("Fed Rate Cut — September vs October Violation", fontsize=13, fontweight="bold")
-    ax.legend(fontsize=10)
-    ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
-    ax.annotate("Violation zone:\nP(Sep) > P(Oct)", xy=(0.5, 0.5), xycoords="axes fraction",
-                fontsize=11, ha="center", color="red", fontweight="bold",
-                bbox=dict(boxstyle="round,pad=0.3", facecolor="lightyellow", edgecolor="red"))
-plt.tight_layout()
-plt.savefig(output_figure("fig7_fed_violation_detail.png"), dpi=150, bbox_inches="tight")
-show_or_close()
-
 # %% [markdown]
 # ---
 # ## 6. Discussion
@@ -629,7 +671,7 @@ show_or_close()
 # - Cross-venue consistency checks (Polymarket vs Kalshi)
 # - Backtesting: do violations predict profitable trades?
 
-# %% — Cell 14: Final Summary
+# %% — Cell 13: Final Summary
 print("\n" + "=" * 70)
 print("ANTILEGO — FINAL SUMMARY")
 print("=" * 70)
