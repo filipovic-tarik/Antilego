@@ -209,8 +209,8 @@ dashboard_rows = max(len(all_clear), len(violating), 1)
 
 fig = plt.figure(figsize=(18, 3.25 * dashboard_rows + 1.0))
 columns = fig.add_gridspec(1, 2, left=0.05, right=0.98, bottom=0.06, top=0.91, wspace=0.13)
-left_grid = columns[0].subgridspec(max(len(all_clear), 1), 1, hspace=0.34)
-right_grid = columns[1].subgridspec(max(len(violating), 1), 1, hspace=0.34)
+left_grid = columns[0].subgridspec(dashboard_rows, 1, hspace=0.34)
+right_grid = columns[1].subgridspec(dashboard_rows, 1, hspace=0.34)
 
 fig.text(0.255, 0.955, "ALL CLEAR", color="#31d07c", fontsize=18,
          fontweight="bold", ha="center", va="center")
