@@ -34,6 +34,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from antilego.paths import DEFAULT_SNAPSHOT_PATH
 from antilego.signal_visuals import figure_path
+from antilego.contradiction_brain import evaluate_family
 
 parser = argparse.ArgumentParser(description="Run the Antilego analysis workflow")
 parser.add_argument(
@@ -153,30 +154,13 @@ for snap in snapshots:
     for family in snap["families"]:
         prices = [m["price"] for m in family["markets"] if m["price"] is not None]
         ftype = family["type"]
-
-        # Detect violations
-        violations = []
-        if ftype == "deadline_nesting":
-            for i in range(len(prices) - 1):
-                if prices[i] > prices[i + 1]:
-                    violations.append({
-                        "pair": f"{family['markets'][i]['label']} > {family['markets'][i+1]['label']}",
-                        "magnitude": prices[i] - prices[i + 1],
-                    })
-        elif ftype == "threshold_chain":
-            for i in range(len(prices) - 1):
-                if prices[i] < prices[i + 1]:
-                    violations.append({
-                        "pair": f"{family['markets'][i]['label']} < {family['markets'][i+1]['label']}",
-                        "magnitude": prices[i + 1] - prices[i],
-                    })
-        elif ftype == "mutually_exclusive":
-            total = sum(prices)
-            if abs(total - 1.0) > 0.005:
-                violations.append({
-                    "pair": "sum ≠ 1.0",
-                    "magnitude": abs(total - 1.0),
-                })
+        evaluation = evaluate_family(family)
+        if evaluation["coherent"] is None:
+            raise RuntimeError(
+                f"Cannot evaluate {family['name']}: "
+                f"{evaluation.get('error', 'incomplete market data')}"
+            )
+        violations = evaluation["violations"]
 
         total_magnitude = sum(v["magnitude"] for v in violations)
         max_magnitude = max((v["magnitude"] for v in violations), default=0)
@@ -189,7 +173,7 @@ for snap in snapshots:
             "has_violation": len(violations) > 0,
             "total_magnitude": total_magnitude,
             "max_magnitude": max_magnitude,
-            "price_sum": sum(prices) if ftype == "mutually_exclusive" else None,
+            "price_sum": evaluation.get("sum"),
             "violation_details": violations,
         })
 
@@ -372,8 +356,8 @@ def project_to_coherent(observed, family_type, exhaustive=True):
 
     Args:
         observed: numpy array of observed probabilities
-        family_type: one of 'threshold_chain', 'deadline_nesting', 'mutually_exclusive'
-        exhaustive: for mutually_exclusive, whether outcomes cover entire space
+        family_type: a key from the probability-law registry
+        exhaustive: compatibility switch for legacy mutually-exclusive families
 
     Returns:
         dict with 'projected', 'adjustments', 'inconsistency_score'
@@ -392,16 +376,20 @@ def project_to_coherent(observed, family_type, exhaustive=True):
             for i in range(n - 1):
                 constraints.append(p[i] >= p[i + 1])
 
-        elif family_type == "deadline_nesting":
+        elif family_type in {"deadline_nesting", "logical_implication"}:
             # p[i] <= p[i+1] for all consecutive pairs
             for i in range(n - 1):
                 constraints.append(p[i] <= p[i + 1])
 
-        elif family_type == "mutually_exclusive":
-            if exhaustive:
-                constraints.append(cp.sum(p) == 1)
-            else:
-                constraints.append(cp.sum(p) <= 1)
+        elif family_type in {
+            "mutually_exclusive",
+            "exhaustive_outcomes",
+            "complements",
+        }:
+            constraints.append(cp.sum(p) == 1)
+
+        elif family_type == "non_exhaustive_exclusivity":
+            constraints.append(cp.sum(p) <= 1)
 
         prob = cp.Problem(objective, constraints)
         prob.solve(solver=cp.SCS, verbose=False)
@@ -423,7 +411,7 @@ def project_to_coherent(observed, family_type, exhaustive=True):
                         projected[i] = avg
                         projected[i + 1] = avg
 
-        elif family_type == "deadline_nesting":
+        elif family_type in {"deadline_nesting", "logical_implication"}:
             # Pool adjacent violators (ascending)
             for _ in range(n):
                 for i in range(n - 1):
@@ -432,9 +420,15 @@ def project_to_coherent(observed, family_type, exhaustive=True):
                         projected[i] = avg
                         projected[i + 1] = avg
 
-        elif family_type == "mutually_exclusive":
-            if exhaustive:
-                projected = projected / projected.sum()
+        elif family_type in {
+            "mutually_exclusive",
+            "exhaustive_outcomes",
+            "complements",
+        }:
+            projected = projected / projected.sum()
+
+        elif family_type == "non_exhaustive_exclusivity" and projected.sum() > 1:
+            projected = projected / projected.sum()
 
         projected = np.clip(projected, 0, 1)
 

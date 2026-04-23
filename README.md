@@ -8,6 +8,21 @@ Antilego is a read-only probability-consistency engine for prediction markets. I
 collects public Polymarket prices, groups logically related contracts, and then flags
 deadline, threshold, and mutual exclusivity probability violations.
 
+## Supported probability laws
+
+The authoritative law registry lives in `antilego/contradiction_brain.py`.
+Antilego currently supports:
+
+- deadline monotonicity;
+- threshold monotonicity;
+- exhaustive-outcome normalization;
+- complementary-event normalization;
+- non-exhaustive mutual exclusivity; and
+- general logical implication.
+
+`market_families.py` selects a registered law for each configured contract
+family; it does not implement the mathematics itself.
+
 ## Run the current pipeline
 
 ```bash

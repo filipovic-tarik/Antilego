@@ -61,7 +61,7 @@ FAMILIES = [
     },
     {
         "name": "2026 NBA Champion",
-        "type": "mutually_exclusive",
+        "type": "exhaustive_outcomes",
         "slug": "2026-nba-champion",
         "constraint": "sum(P) = 1.0 (exactly one team wins)",
         "markets": [
