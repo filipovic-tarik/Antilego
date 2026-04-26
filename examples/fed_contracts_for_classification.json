@@ -1,0 +1,19 @@
+{
+  "contracts": [
+    {
+      "id": "fed-cut-september",
+      "title": "Will the Federal Reserve cut interest rates by the September 2026 meeting?",
+      "rules": "Resolves Yes if the Federal Reserve announces at least one target-rate cut on or before the September 2026 meeting."
+    },
+    {
+      "id": "fed-cut-october",
+      "title": "Will the Federal Reserve cut interest rates by the October 2026 meeting?",
+      "rules": "Resolves Yes if the Federal Reserve announces at least one target-rate cut on or before the October 2026 meeting."
+    },
+    {
+      "id": "fed-cut-december",
+      "title": "Will the Federal Reserve cut interest rates by the December 2026 meeting?",
+      "rules": "Resolves Yes if the Federal Reserve announces at least one target-rate cut on or before the December 2026 meeting."
+    }
+  ]
+}

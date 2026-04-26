@@ -23,6 +23,23 @@ Antilego currently supports:
 `market_families.py` selects a registered law for each configured contract
 family; it does not implement the mathematics itself.
 
+## AI relationship classification
+
+Antilego can ask an OpenAI model to classify a curated group of contract titles
+and resolution rules into one of its registered laws. The model may only propose
+a law; Python validation decides whether its structured response is acceptable.
+
+Set your key locally (never commit it), then run:
+
+```bash
+export OPENAI_API_KEY="your-key"
+python -m antilego.antilego_engine classify \
+  --input examples/fed_contracts_for_classification.json
+```
+
+The first version accepts contract metadata, not bare token IDs. Automated
+Polymarket metadata retrieval is a separate next step.
+
 ## Run the current pipeline
 
 ```bash
