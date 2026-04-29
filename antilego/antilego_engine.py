@@ -8,6 +8,7 @@ from collections import Counter
 from pathlib import Path
 
 from .contradiction_brain import analyze_snapshots, load_snapshots
+from .market_discovery import discovery_report, write_discovery_report
 from .market_tracking import run_collection
 from .paths import DEFAULT_SNAPSHOT_PATH, live_snapshot_path
 from .relationship_intelligence import classify_relationship
@@ -40,6 +41,25 @@ def main() -> None:
         "--input", type=Path, required=True, help="JSON file containing a contracts array"
     )
     classify.add_argument("--model", help="OpenAI model override")
+    discover = subparsers.add_parser(
+        "discover", help="discover currently tradable Polymarket contract groups"
+    )
+    discover.add_argument("--limit", type=int, default=10, help="maximum event groups")
+    discover.add_argument(
+        "--min-contracts", type=int, default=2, help="minimum contracts per group"
+    )
+    discover.add_argument(
+        "--max-contracts", type=int, default=40, help="maximum contracts per group"
+    )
+    discover.add_argument("--page-size", type=int, default=100)
+    discover.add_argument("--max-pages", type=int, default=10)
+    discover.add_argument("--output", type=Path, help="optional JSON output file")
+    discover.add_argument(
+        "--classify",
+        action="store_true",
+        help="classify each discovered group with the configured OpenAI model",
+    )
+    discover.add_argument("--model", help="OpenAI model override for --classify")
     args = parser.parse_args()
 
     if args.command == "collect":
@@ -55,6 +75,26 @@ def main() -> None:
             raise ValueError("Classification input must contain a contracts array")
         result = classify_relationship(contracts, model=args.model)
         print(json.dumps(result.to_dict(), indent=2, ensure_ascii=False))
+        return
+
+    if args.command == "discover":
+        report = discovery_report(
+            limit=args.limit,
+            min_contracts=args.min_contracts,
+            max_contracts=args.max_contracts,
+            page_size=args.page_size,
+            max_pages=args.max_pages,
+        )
+        if args.classify:
+            for event in report["events"]:
+                result = classify_relationship(event["contracts"], model=args.model)
+                event["classification"] = result.to_dict()
+        if args.output is not None:
+            output_path = write_discovery_report(report, args.output)
+            print(f"Discovered {report['candidate_count']} active group(s)")
+            print(f"Saved to {output_path}")
+        else:
+            print(json.dumps(report, indent=2, ensure_ascii=False))
         return
 
     summary = analyze_archive(args.input)
