@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#07100d" />
+    <title>Antilego Local</title>
+    <link rel="stylesheet" href="/static/app.css" />
+    <script src="/static/app.js" defer></script>
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="#top" aria-label="Antilego dashboard home">
+        <img src="/logo.png" alt="" />
+        <span>ANTILEGO</span>
+      </a>
+      <div class="private-badge"><i></i> Private on this Mac</div>
+    </header>
+
+    <main id="top">
+      <section class="hero">
+        <div>
+          <p class="eyebrow">Prediction-market consistency engine</p>
+          <h1>Find the prices<br />that disagree.</h1>
+          <p class="hero-copy">
+            Discover related Polymarket contracts, classify their probability laws,
+            and monitor inconsistencies from one private control room.
+          </p>
+        </div>
+        <div class="hero-status">
+          <span class="status-label">System</span>
+          <strong id="hero-status">Ready</strong>
+          <p id="hero-message">Connect your classifier to begin.</p>
+        </div>
+      </section>
+
+      <section class="metrics" aria-label="Current Antilego status">
+        <article><span>Monitoring</span><strong id="metric-monitor">Stopped</strong></article>
+        <article><span>Approved families</span><strong id="metric-families">0</strong></article>
+        <article><span>Latest snapshot</span><strong id="metric-snapshot">None</strong></article>
+        <article><span>Violations now</span><strong id="metric-violations">0</strong></article>
+      </section>
+
+      <section class="workspace-grid">
+        <article class="panel controls-panel">
+          <div class="panel-heading">
+            <div><p>01 / Controls</p><h2>Run Antilego</h2></div>
+            <span id="key-state" class="small-badge">Key needed</span>
+          </div>
+
+          <label class="field key-field">
+            <span>OpenAI API key</span>
+            <div class="input-action">
+              <input id="api-key" type="password" autocomplete="off" placeholder="sk-..." />
+              <button id="save-key" class="button secondary" type="button">Save for session</button>
+            </div>
+            <small>Held in memory only. It is never written to a file.</small>
+          </label>
+
+          <div class="settings-row">
+            <label class="field">
+              <span>Events to discover</span>
+              <input id="discovery-limit" type="number" min="1" max="50" value="10" />
+            </label>
+            <label class="field">
+              <span>Approval confidence</span>
+              <input id="confidence" type="number" min="0" max="1" step="0.05" value="0.8" />
+            </label>
+            <label class="field">
+              <span>Snapshot interval</span>
+              <select id="interval">
+                <option value="1">Every minute</option>
+                <option value="5" selected>Every 5 minutes</option>
+                <option value="15">Every 15 minutes</option>
+                <option value="30">Every 30 minutes</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="primary-actions">
+            <button id="discover" class="button primary" type="button">
+              <span>Discover markets</span><b>01</b>
+            </button>
+            <button id="start-monitor" class="button primary" type="button">
+              <span>Start monitoring</span><b>02</b>
+            </button>
+            <button id="stop-monitor" class="button danger" type="button">
+              <span>Stop monitoring</span><b>■</b>
+            </button>
+          </div>
+        </article>
+
+        <article class="panel activity-panel">
+          <div class="panel-heading">
+            <div><p>02 / Activity</p><h2>What Antilego is doing</h2></div>
+            <span id="activity-state" class="small-badge neutral">Idle</span>
+          </div>
+          <div class="activity-orbit" aria-hidden="true"><i></i><i></i><i></i></div>
+          <p id="activity-message" class="activity-message">Waiting for your first action.</p>
+          <div class="progress-track"><i id="activity-progress"></i></div>
+          <dl class="activity-details">
+            <div><dt>Next snapshot</dt><dd id="next-snapshot">Not scheduled</dd></div>
+            <div><dt>Data location</dt><dd id="data-location">Weekly archive</dd></div>
+          </dl>
+        </article>
+      </section>
+
+      <section class="panel markets-panel">
+        <div class="panel-heading">
+          <div><p>03 / Live registry</p><h2>Monitored market families</h2></div>
+          <button id="open-folder" class="text-button" type="button">Open data folder ↗</button>
+        </div>
+        <div class="market-table" role="table" aria-label="Monitored market families">
+          <div class="market-row table-header" role="row">
+            <span>Family</span><span>Law</span><span>Markets</span><span>Status</span><span>Signal</span>
+          </div>
+          <div id="market-rows" class="market-rows">
+            <div class="empty-state">No approved families yet. Discover markets to begin.</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel reports-panel">
+        <div class="panel-heading">
+          <div><p>04 / Evidence</p><h2>Reports and graphs</h2></div>
+          <button id="generate-graphs" class="button secondary" type="button">Generate graphs</button>
+        </div>
+        <p id="graphs-message" class="section-note">
+          Collect complete snapshots before generating evidence.
+        </p>
+        <div id="graph-grid" class="graph-grid"></div>
+      </section>
+
+      <section class="explanation">
+        <p>How to read a signal</p>
+        <h2>A violation is a lead,<br />not a guaranteed trade.</h2>
+        <div class="explanation-grid">
+          <p>
+            Antilego compares related probabilities with mathematical rules. When the
+            prices conflict, it records the contracts and the size of the discrepancy.
+          </p>
+          <p>
+            Always verify executable bid and ask prices, liquidity, fees, resolution
+            rules, and whether the discrepancy still exists before risking money.
+          </p>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <span>ANTILEGO / LOCAL RESEARCH APPLICATION</span>
+      <button id="quit-app" class="text-button" type="button">Quit Antilego</button>
+    </footer>
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  </body>
+</html>
