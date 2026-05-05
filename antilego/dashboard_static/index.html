@@ -23,8 +23,8 @@
           <p class="eyebrow">Prediction-market consistency engine</p>
           <h1>Find the prices<br />that disagree.</h1>
           <p class="hero-copy">
-            Discover related Polymarket contracts, classify their probability laws,
-            and monitor inconsistencies from one private control room.
+            Discover related Polymarket contracts, use plan-backed reasoning to classify
+            their probability laws, and verify inconsistencies locally on your Mac.
           </p>
         </div>
         <div class="hero-status">
@@ -45,17 +45,25 @@
         <article class="panel controls-panel">
           <div class="panel-heading">
             <div><p>01 / Controls</p><h2>Run Antilego</h2></div>
-            <span id="key-state" class="small-badge">Key needed</span>
+            <span id="account-state" class="small-badge neutral">Not connected</span>
           </div>
 
-          <label class="field key-field">
-            <span>OpenAI API key</span>
-            <div class="input-action">
-              <input id="api-key" type="password" autocomplete="off" placeholder="sk-..." />
-              <button id="save-key" class="button secondary" type="button">Save for session</button>
+          <div class="account-connect">
+            <div class="account-copy">
+              <span>Analysis backend</span>
+              <strong>Use your ChatGPT plan</strong>
+              <p id="account-message">
+                Sign in once so Antilego can classify market relationships without an API key.
+              </p>
+              <small id="account-email">No ChatGPT account connected.</small>
             </div>
-            <small>Held in memory only. It is never written to a file.</small>
-          </label>
+            <div class="account-actions">
+              <button id="connect-chatgpt" class="button primary account-button" type="button">
+                Continue with ChatGPT
+              </button>
+              <button id="disconnect-chatgpt" class="button secondary" type="button">Disconnect</button>
+            </div>
+          </div>
 
           <div class="settings-row">
             <label class="field">
