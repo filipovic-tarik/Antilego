@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
@@ -52,8 +54,28 @@ def fetch_active_events(
         f"{GAMMA_EVENTS_URL}?{query}",
         headers={"User-Agent": "Antilego/1.0 (read-only research)"},
     )
-    with urllib.request.urlopen(request, timeout=timeout) as response:
-        payload = json.loads(response.read().decode("utf-8"))
+    last_error: Exception | None = None
+    for attempt in range(3):
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+            break
+        except urllib.error.HTTPError as error:
+            last_error = error
+            if error.code not in {408, 429, 500, 502, 503, 504} or attempt == 2:
+                detail = error.read().decode("utf-8", errors="replace")
+                raise RuntimeError(
+                    f"Polymarket discovery failed ({error.code}): {detail}"
+                ) from error
+        except (OSError, json.JSONDecodeError) as error:
+            last_error = error
+            if attempt == 2:
+                raise RuntimeError(
+                    f"Polymarket discovery could not reach Gamma API: {error}"
+                ) from error
+        time.sleep(0.75 * (attempt + 1))
+    else:  # Defensive; the loop either breaks or raises.
+        raise RuntimeError(f"Polymarket discovery failed: {last_error}")
     if not isinstance(payload, list):
         raise RuntimeError("Polymarket event discovery returned an unexpected payload")
     return payload

@@ -53,6 +53,7 @@ class RelationshipIntelligenceTests(unittest.TestCase):
         self.assertEqual(result.ordered_contract_ids, ("september", "december"))
         self.assertEqual(captured["api_key"], "test-key")
         self.assertEqual(captured["request"]["model"], "test-model")
+        self.assertEqual(captured["request"]["reasoning"], {"effort": "low"})
         self.assertTrue(captured["request"]["text"]["format"]["strict"])
 
     def test_model_cannot_invent_probability_law(self):

@@ -399,16 +399,26 @@ class ChatGPTPlanSession:
             },
             method="POST",
         )
-        try:
-            with urllib.request.urlopen(request, timeout=180) as response:
-                return _parse_sse_response(response)
-        except urllib.error.HTTPError as error:
-            detail = error.read().decode("utf-8", errors="replace")
-            raise RuntimeError(
-                f"ChatGPT plan request failed ({error.code}): {detail}"
-            ) from error
-        except OSError as error:
-            raise RuntimeError(f"ChatGPT plan request failed: {error}") from error
+        last_error: Exception | None = None
+        for attempt in range(3):
+            try:
+                with urllib.request.urlopen(request, timeout=360) as response:
+                    return _parse_sse_response(response)
+            except urllib.error.HTTPError as error:
+                last_error = error
+                if error.code not in {408, 429, 500, 502, 503, 504} or attempt == 2:
+                    detail = error.read().decode("utf-8", errors="replace")
+                    raise RuntimeError(
+                        f"ChatGPT plan request failed ({error.code}): {detail}"
+                    ) from error
+            except OSError as error:
+                last_error = error
+                if attempt == 2:
+                    raise RuntimeError(
+                        f"ChatGPT plan request failed after 3 attempts: {error}"
+                    ) from error
+            time.sleep(1.5 * (attempt + 1))
+        raise RuntimeError(f"ChatGPT plan request failed: {last_error}")
 
 
 SessionFactory = Callable[[], ChatGPTPlanSession]
