@@ -40,9 +40,9 @@ def main() -> None:
     collect = subparsers.add_parser("collect", help="collect public live prices")
     collect.add_argument("--output", type=Path)
     monitor = subparsers.add_parser(
-        "monitor", help="snapshot approved discovered families every five minutes"
+        "monitor", help="snapshot approved discovered families every two minutes"
     )
-    monitor.add_argument("--interval-minutes", type=float, default=5)
+    monitor.add_argument("--interval-minutes", type=float, default=2)
     monitor.add_argument(
         "--count", type=int, default=0, help="snapshots to collect; zero runs continuously"
     )

@@ -1,16 +1,14 @@
 let csrfToken = "";
 let latestStatus = null;
 let toastTimer = null;
+let lastNotificationId = null;
+const selectedEventIds = new Set();
 
 const $ = (selector) => document.querySelector(selector);
 
 function escapeHtml(value) {
-  return String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
+  return String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;");
 }
 
 function titleCase(value) {
@@ -36,9 +34,9 @@ async function request(path, options = {}) {
 }
 
 function formatTime(value) {
-  if (!value) return "None yet";
+  if (!value) return "Not scheduled";
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "None yet";
+  if (Number.isNaN(date.getTime())) return "Not scheduled";
   return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" });
 }
 
@@ -55,26 +53,132 @@ function renderMarkets(families) {
     else if (family.coherent === true) { label = "Consistent"; statusClass = "good"; }
     else if (family.coherent === false) { label = "Violation"; statusClass = "bad"; }
     const signal = family.coherent === false ? `${family.violation_count} found` : "-";
-    const signalClass = family.coherent === false ? "signal bad" : "signal";
-    return `
-      <div class="market-row" role="row">
-        <span class="market-name"><strong>${escapeHtml(family.name)}</strong><small>${Math.round((family.confidence || 0) * 100)}% classification confidence</small></span>
-        <span>${escapeHtml(titleCase(family.type))}</span>
-        <span>${escapeHtml(family.market_count)}</span>
-        <span class="status-pill ${statusClass}">${label}</span>
-        <span class="${signalClass}">${signal}</span>
-      </div>`;
+    return `<div class="market-row" role="row">
+      <span class="market-name"><strong>${escapeHtml(family.name)}</strong><small>${Math.round((family.confidence || 0) * 100)}% classification confidence</small></span>
+      <span>${escapeHtml(titleCase(family.type))}</span><span>${escapeHtml(family.market_count)}</span>
+      <span class="status-pill ${statusClass}">${label}</span>
+      <span class="signal ${family.coherent === false ? "bad" : ""}">${signal}</span>
+    </div>`;
   }).join("");
 }
 
-function renderGraphs(graphs) {
-  $("#graphs-message").textContent = graphs.message;
+function renderApprovals(events) {
+  const panel = $("#approval-panel");
+  panel.hidden = !events.length;
+  if (!events.length) return;
+  const activeIds = new Set(events.map((event) => String(event.event_id)));
+  [...selectedEventIds].forEach((id) => { if (!activeIds.has(id)) selectedEventIds.delete(id); });
+  $("#approval-count").textContent = `${events.length} waiting`;
+  $("#approval-list").innerHTML = events.map((event) => {
+    const id = String(event.event_id);
+    const confidence = Math.round((event.confidence || 0) * 100);
+    const disabled = event.eligible ? "" : "disabled";
+    const checked = selectedEventIds.has(id) ? "checked" : "";
+    const warning = !event.eligible ? "No supported relationship" :
+      event.requires_review || !event.meets_confidence ? "Review recommended" : "Ready to approve";
+    return `<label class="approval-item ${event.eligible ? "" : "disabled"}">
+      <input class="approval-checkbox" type="checkbox" value="${escapeHtml(id)}" ${disabled} ${checked} />
+      <span class="approval-select" aria-hidden="true"></span>
+      <span class="approval-copy"><strong>${escapeHtml(event.title)}</strong>
+        <small>${escapeHtml(titleCase(event.law))} · ${event.contract_count} contracts · ${confidence}% confidence</small>
+        <em>${escapeHtml(event.reason || "No classification explanation provided.")}</em></span>
+      <span class="approval-status">${warning}</span>
+    </label>`;
+  }).join("");
+  document.querySelectorAll(".approval-checkbox").forEach((checkbox) => {
+    checkbox.addEventListener("change", () => {
+      if (checkbox.checked) selectedEventIds.add(checkbox.value);
+      else selectedEventIds.delete(checkbox.value);
+      $("#approve-selected").disabled = selectedEventIds.size === 0;
+    });
+  });
+  $("#approve-selected").disabled = selectedEventIds.size === 0;
+  $("#approve-all").disabled = !events.some((event) => event.eligible);
+}
+
+function drawChart(canvas, family) {
+  const rect = canvas.getBoundingClientRect();
+  const ratio = window.devicePixelRatio || 1;
+  canvas.width = Math.max(1, Math.floor(rect.width * ratio));
+  canvas.height = Math.max(1, Math.floor(rect.height * ratio));
+  const ctx = canvas.getContext("2d");
+  ctx.scale(ratio, ratio);
+  const width = rect.width;
+  const height = rect.height;
+  const pad = { left: 42, right: 16, top: 20, bottom: 28 };
+  const plotWidth = Math.max(1, width - pad.left - pad.right);
+  const plotHeight = Math.max(1, height - pad.top - pad.bottom);
+  const points = family.points || [];
+  const maxValue = Math.max(0.01, ...points.map((point) => Number(point.magnitude) || 0));
+  const x = (index) => pad.left + (points.length <= 1 ? plotWidth / 2 : index * plotWidth / (points.length - 1));
+  const y = (value) => pad.top + plotHeight - ((Number(value) || 0) / maxValue) * plotHeight;
+
+  ctx.strokeStyle = "rgba(214,238,225,.12)";
+  ctx.fillStyle = "#7f9187";
+  ctx.font = "11px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif";
+  for (let row = 0; row <= 3; row += 1) {
+    const py = pad.top + row * plotHeight / 3;
+    ctx.beginPath(); ctx.moveTo(pad.left, py); ctx.lineTo(width - pad.right, py); ctx.stroke();
+  }
+  points.forEach((point, index) => {
+    if (!point.violating) return;
+    const start = index === 0 ? pad.left : (x(index - 1) + x(index)) / 2;
+    const end = index === points.length - 1 ? width - pad.right : (x(index) + x(index + 1)) / 2;
+    ctx.fillStyle = "rgba(237,106,106,.20)";
+    ctx.fillRect(start, pad.top, end - start, plotHeight);
+  });
+  if (points.length) {
+    ctx.beginPath();
+    points.forEach((point, index) => {
+      if (index === 0) ctx.moveTo(x(index), y(point.magnitude));
+      else ctx.lineTo(x(index), y(point.magnitude));
+    });
+    ctx.strokeStyle = "#42dc8f"; ctx.lineWidth = 2; ctx.stroke();
+  }
+  ctx.fillStyle = "#7f9187";
+  ctx.fillText(`${(maxValue * 100).toFixed(1)}%`, 4, pad.top + 4);
+  ctx.fillText("0%", 15, pad.top + plotHeight + 4);
+  if (points.length) {
+    ctx.fillText(formatTime(points[0].timestamp), pad.left, height - 7);
+    const endLabel = formatTime(points[points.length - 1].timestamp);
+    const textWidth = ctx.measureText(endLabel).width;
+    ctx.fillText(endLabel, width - pad.right - textWidth, height - 7);
+  }
+}
+
+function renderLiveCharts(history) {
   const container = $("#graph-grid");
-  container.innerHTML = graphs.items.map((figure) => `
-    <figure class="graph-card">
-      <a href="${escapeHtml(figure.url)}" target="_blank" rel="noreferrer"><img src="${escapeHtml(figure.url)}" alt="${escapeHtml(figure.name)}" /></a>
-      <figcaption>${escapeHtml(figure.name)}</figcaption>
-    </figure>`).join("");
+  const families = history?.families || [];
+  if (!families.length) {
+    container.innerHTML = '<div class="empty-state">The live charts will appear after the first snapshot.</div>';
+    return;
+  }
+  const signature = families.map((family) => `${family.name}:${family.points.length}:${family.points.at(-1)?.timestamp}`).join("|");
+  if (container.dataset.signature === signature) return;
+  container.dataset.signature = signature;
+  container.innerHTML = families.map((family, index) => {
+    const latest = family.points.at(-1) || {};
+    return `<article class="live-chart-card">
+      <div><strong>${escapeHtml(family.name)}</strong><span class="status-pill ${latest.violating ? "bad" : "good"}">${latest.violating ? "Violation" : "Consistent"}</span></div>
+      <small>${escapeHtml(titleCase(family.law))} · discrepancy magnitude</small>
+      <canvas data-chart-index="${index}" aria-label="Violation history for ${escapeHtml(family.name)}"></canvas>
+    </article>`;
+  }).join("");
+  container.querySelectorAll("canvas").forEach((canvas) => drawChart(canvas, families[Number(canvas.dataset.chartIndex)]));
+}
+
+function renderNotifications(notifications) {
+  if (!notifications?.length) return;
+  const newest = notifications[notifications.length - 1];
+  if (lastNotificationId === null) { lastNotificationId = newest.id; return; }
+  const fresh = notifications.filter((item) => item.id > lastNotificationId);
+  fresh.forEach((item) => {
+    showToast(item.message, true);
+    if ("Notification" in window && Notification.permission === "granted") {
+      new Notification(item.title, { body: item.message });
+    }
+  });
+  lastNotificationId = newest.id;
 }
 
 function render(status) {
@@ -82,22 +186,12 @@ function render(status) {
   csrfToken = status.csrf_token || csrfToken;
   const running = status.monitor.state === "running";
   const discovering = status.discovery.state === "running";
-  const graphing = status.graphs.state === "running";
-  const discoveryError = status.discovery.state === "error";
-  const monitorError = status.monitor.state === "error";
-  const graphError = status.graphs.state === "error";
+  const errors = [status.discovery.state, status.monitor.state, status.graphs.state].includes("error");
   const connected = Boolean(status.chatgpt?.connected);
-  document.body.classList.toggle("is-running", running || discovering || graphing);
-  document.body.classList.toggle("has-error", discoveryError || monitorError || graphError);
-
-  $("#hero-status").textContent = discoveryError || monitorError || graphError
-    ? "Action needed"
-    : running ? "Monitoring live" : discovering ? "Discovering" : connected ? "Ready" : "Connect ChatGPT";
-  $("#hero-message").textContent = discoveryError
-    ? status.discovery.message
-    : monitorError ? status.monitor.message
-      : graphError ? status.graphs.message
-        : running ? status.monitor.message : status.discovery.message;
+  document.body.classList.toggle("is-running", running || discovering);
+  document.body.classList.toggle("has-error", errors);
+  $("#hero-status").textContent = errors ? "Action needed" : running ? "Monitoring live" : discovering ? "Discovering" : connected ? "Ready" : "Connect ChatGPT";
+  $("#hero-message").textContent = status.monitor.state === "error" ? status.monitor.message : status.discovery.state === "error" ? status.discovery.message : running ? status.monitor.message : status.discovery.message;
   $("#metric-monitor").textContent = titleCase(status.monitor.state);
   $("#metric-families").textContent = status.family_count;
   $("#metric-snapshot").textContent = formatTime(status.latest_snapshot_at);
@@ -105,40 +199,33 @@ function render(status) {
   $("#account-state").textContent = connected ? "Plan connected" : "Not connected";
   $("#account-state").classList.toggle("neutral", !connected);
   $("#account-message").textContent = status.chatgpt?.message || "Connect ChatGPT to enable discovery.";
-  $("#account-email").textContent = connected && status.chatgpt.email
-    ? `Connected as ${status.chatgpt.email} using ${status.chatgpt.model_display_name || status.chatgpt.model || "an account-selected model"}. Credentials are stored privately on this Mac.`
-    : "No ChatGPT account connected.";
+  $("#account-email").textContent = connected && status.chatgpt.email ? `Connected as ${status.chatgpt.email} using ${status.chatgpt.model_display_name || status.chatgpt.model || "an account-selected model"}. Credentials are stored privately on this Mac.` : "No ChatGPT account connected.";
   $("#connect-chatgpt").disabled = connected || discovering;
   $("#disconnect-chatgpt").disabled = !connected || discovering;
 
-  const active = discovering || discoveryError
-    ? status.discovery
-    : graphing || graphError ? status.graphs : status.monitor;
+  const active = discovering || status.discovery.state === "error" ? status.discovery : status.monitor;
   $("#activity-state").textContent = titleCase(active.state);
   $("#activity-message").textContent = active.message;
-  const progress = discovering && status.discovery.total
-    ? (status.discovery.processed / status.discovery.total) * 100
-    : (discovering || graphing ? 18 : running ? 100 : 0);
+  const progress = discovering && status.discovery.total ? (status.discovery.processed / status.discovery.total) * 100 : discovering ? 18 : running ? 100 : 0;
   $("#activity-progress").style.width = `${progress}%`;
-  $("#next-snapshot").textContent = status.monitor.next_snapshot_at ? formatTime(status.monitor.next_snapshot_at) : "Not scheduled";
+  $("#next-snapshot").textContent = formatTime(status.monitor.next_snapshot_at);
+  $("#next-discovery").textContent = formatTime(status.discovery_schedule?.next_discovery_at);
   $("#data-location").textContent = status.archive_path.split("/").slice(-2).join("/");
 
-  $("#discover").disabled = discovering || graphing || !connected;
-  $("#start-monitor").disabled = running || discovering || graphing || !status.family_count;
+  const nextReview = status.discovery_schedule?.next_discovery_at ? new Date(status.discovery_schedule.next_discovery_at) : null;
+  const aiCooldown = nextReview && !Number.isNaN(nextReview.getTime()) && nextReview > new Date();
+  $("#discover").disabled = discovering || !connected || status.pending_events.length > 0 || aiCooldown;
+  $("#start-monitor").disabled = running || discovering || !status.family_count;
   $("#stop-monitor").disabled = !running;
-  $("#generate-graphs").disabled = graphing || !status.latest_snapshot_at;
-
+  renderApprovals(status.pending_events || []);
   renderMarkets(status.monitored_families);
-  renderGraphs(status.graphs);
+  renderLiveCharts(status.history);
+  renderNotifications(status.notifications);
 }
 
 async function refresh() {
-  try {
-    const status = await request("/api/status");
-    render(status);
-  } catch (error) {
-    showToast(error.message, true);
-  }
+  try { render(await request("/api/status")); }
+  catch (error) { showToast(error.message, true); }
 }
 
 async function action(path, body, successMessage) {
@@ -146,44 +233,37 @@ async function action(path, body, successMessage) {
     const payload = await request(path, { method: "POST", body: JSON.stringify(body || {}) });
     render({ ...payload.status, csrf_token: csrfToken });
     if (successMessage) showToast(successMessage);
-  } catch (error) {
-    showToast(error.message, true);
-    return null;
-  }
-  return true;
+    return true;
+  } catch (error) { showToast(error.message, true); return null; }
 }
 
 $("#connect-chatgpt").addEventListener("click", async () => {
   try {
     const payload = await request("/api/chatgpt/connect", { method: "POST", body: "{}" });
     window.location.assign(payload.authorization_url);
-  } catch (error) {
-    showToast(error.message, true);
-  }
+  } catch (error) { showToast(error.message, true); }
 });
-
-$("#disconnect-chatgpt").addEventListener("click", () => action(
-  "/api/chatgpt/disconnect",
-  {},
-  "ChatGPT disconnected from Antilego.",
-));
-
-$("#discover").addEventListener("click", () => action("/api/discover", {
-  limit: Number($("#discovery-limit").value),
-  minimum_confidence: Number($("#confidence").value),
-}, "Discovery started. You can leave this page open."));
-
-$("#start-monitor").addEventListener("click", () => action("/api/monitor/start", {
-  interval_minutes: Number($("#interval").value),
-}, "Monitoring started."));
-
+$("#disconnect-chatgpt").addEventListener("click", () => action("/api/chatgpt/disconnect", {}, "ChatGPT disconnected from Antilego."));
+$("#discover").addEventListener("click", () => action("/api/discover", { limit: Number($("#discovery-limit").value), minimum_confidence: Number($("#confidence").value) }, "Discovery started. Results will wait for your approval."));
+$("#start-monitor").addEventListener("click", () => action("/api/monitor/start", { interval_minutes: Number($("#interval").value) }, "Monitoring started with two-minute snapshots."));
 $("#stop-monitor").addEventListener("click", () => action("/api/monitor/stop", {}, "Monitoring is stopping."));
-$("#generate-graphs").addEventListener("click", () => action("/api/graphs", {}, "Graph generation started."));
+$("#approve-selected").addEventListener("click", async () => {
+  if (await action("/api/discovery/approve", { event_ids: [...selectedEventIds] }, "Selected event groups approved.")) selectedEventIds.clear();
+});
+$("#approve-all").addEventListener("click", () => action("/api/discovery/approve-all", {}, "All eligible event groups approved."));
+$("#dismiss-approval").addEventListener("click", () => action("/api/discovery/dismiss", {}, "Remaining discoveries dismissed."));
+$("#enable-notifications").addEventListener("click", async () => {
+  if (!("Notification" in window)) { showToast("Browser notifications are not supported here.", true); return; }
+  const permission = await Notification.requestPermission();
+  $("#enable-notifications").textContent = permission === "granted" ? "Browser alerts enabled" : "Enable browser alerts";
+  showToast(permission === "granted" ? "Browser violation alerts enabled." : "Notification permission was not granted.", permission !== "granted");
+});
 $("#open-folder").addEventListener("click", () => action("/api/open-folder", {}, "Opened the weekly data folder."));
 $("#quit-app").addEventListener("click", async () => {
   await action("/api/quit", {}, "Antilego has stopped. You may close this tab.");
   setTimeout(() => { document.body.innerHTML = '<main style="padding:12vh 8vw"><p class="eyebrow">Antilego stopped</p><h1>You can close this tab.</h1></main>'; }, 300);
 });
 
+if ("Notification" in window && Notification.permission === "granted") $("#enable-notifications").textContent = "Browser alerts enabled";
 refresh();
 setInterval(refresh, 2000);

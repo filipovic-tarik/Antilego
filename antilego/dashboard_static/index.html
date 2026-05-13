@@ -77,8 +77,8 @@
             <label class="field">
               <span>Snapshot interval</span>
               <select id="interval">
-                <option value="1">Every minute</option>
-                <option value="5" selected>Every 5 minutes</option>
+                <option value="2" selected>Every 2 minutes</option>
+                <option value="5">Every 5 minutes</option>
                 <option value="15">Every 15 minutes</option>
                 <option value="30">Every 30 minutes</option>
               </select>
@@ -108,14 +108,32 @@
           <div class="progress-track"><i id="activity-progress"></i></div>
           <dl class="activity-details">
             <div><dt>Next snapshot</dt><dd id="next-snapshot">Not scheduled</dd></div>
+            <div><dt>Next AI review</dt><dd id="next-discovery">Not scheduled</dd></div>
             <div><dt>Data location</dt><dd id="data-location">Weekly archive</dd></div>
           </dl>
         </article>
       </section>
 
+      <section id="approval-panel" class="panel approval-panel" hidden>
+        <div class="panel-heading">
+          <div><p>03 / Review</p><h2>Approve discovered event groups</h2></div>
+          <span id="approval-count" class="small-badge neutral">0 waiting</span>
+        </div>
+        <p class="section-note">
+          Antilego found and classified these groups. Select the ones you want monitored,
+          or approve every eligible group at once.
+        </p>
+        <div id="approval-list" class="approval-list"></div>
+        <div class="approval-actions">
+          <button id="approve-selected" class="button primary" type="button">Approve selected</button>
+          <button id="approve-all" class="button secondary" type="button">Approve all eligible</button>
+          <button id="dismiss-approval" class="text-button" type="button">Dismiss remaining</button>
+        </div>
+      </section>
+
       <section class="panel markets-panel">
         <div class="panel-heading">
-          <div><p>03 / Live registry</p><h2>Monitored market families</h2></div>
+          <div><p>04 / Live registry</p><h2>Monitored market families</h2></div>
           <button id="open-folder" class="text-button" type="button">Open data folder ↗</button>
         </div>
         <div class="market-table" role="table" aria-label="Monitored market families">
@@ -130,11 +148,11 @@
 
       <section class="panel reports-panel">
         <div class="panel-heading">
-          <div><p>04 / Evidence</p><h2>Reports and graphs</h2></div>
-          <button id="generate-graphs" class="button secondary" type="button">Generate graphs</button>
+          <div><p>05 / Live evidence</p><h2>Violation dashboard</h2></div>
+          <button id="enable-notifications" class="button secondary" type="button">Enable browser alerts</button>
         </div>
         <p id="graphs-message" class="section-note">
-          Collect complete snapshots before generating evidence.
+          Charts update after every two-minute snapshot. Red shading marks periods when a probability law is violated.
         </p>
         <div id="graph-grid" class="graph-grid"></div>
       </section>
