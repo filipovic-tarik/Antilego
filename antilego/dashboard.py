@@ -10,6 +10,7 @@ import secrets
 import subprocess
 import sys
 import threading
+import time
 import webbrowser
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -34,7 +35,7 @@ from .relationship_intelligence import classify_relationship
 STATIC_DIR = Path(__file__).resolve().parent / "dashboard_static"
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8766
-DEFAULT_SNAPSHOT_INTERVAL_MINUTES = 2.0
+DEFAULT_SNAPSHOT_INTERVAL_MINUTES = 3.0
 AI_DISCOVERY_INTERVAL_HOURS = 1
 HISTORY_LIMIT = 360
 
@@ -79,19 +80,54 @@ def _snapshot_history(path: Path, limit: int = HISTORY_LIMIT) -> dict:
                 ),
                 default=0.0,
             )
+            total = family.get("sum")
+            uses_probability_sum = isinstance(total, (int, float))
+            value = float(total) if uses_probability_sum else magnitude
+            ideal_value = 1.0 if uses_probability_sum else 0.0
+            ideal_label = (
+                "100% line of perfect consistency"
+                if family.get("type") in {
+                    "exhaustive_outcomes",
+                    "mutually_exclusive",
+                    "complements",
+                }
+                else "100% consistency boundary"
+                if uses_probability_sum
+                else "0% line of perfect consistency"
+            )
             item = series.setdefault(
                 family["name"],
-                {"name": family["name"], "law": family.get("type"), "points": []},
+                {
+                    "name": family["name"],
+                    "law": family.get("type"),
+                    "metric_label": (
+                        "combined probability"
+                        if uses_probability_sum
+                        else "probability discrepancy"
+                    ),
+                    "ideal_value": ideal_value,
+                    "ideal_label": ideal_label,
+                    "points": [],
+                },
             )
             item["points"].append(
                 {
                     "timestamp": timestamp,
+                    "value": value,
                     "magnitude": magnitude,
                     "violating": family.get("coherent") is False,
                     "complete": family.get("data_complete") is not False,
                 }
             )
     return {"snapshot_count": len(records), "families": list(series.values())}
+
+
+def _next_cadence_start(previous_start: float, cadence_seconds: float, now: float) -> float:
+    """Return the next future slot on a fixed cadence."""
+    next_start = previous_start + cadence_seconds
+    while next_start < now:
+        next_start += cadence_seconds
+    return next_start
 
 
 class DashboardState:
@@ -310,6 +346,8 @@ class DashboardState:
             self.monitor_thread.start()
 
     def _monitor_loop(self) -> None:
+        cadence_seconds = self.monitor_interval_minutes * 60
+        scheduled_start = time.monotonic()
         try:
             while not self.monitor_stop.is_set():
                 families = load_monitored_families()
@@ -317,9 +355,13 @@ class DashboardState:
                     raise RuntimeError("The monitoring registry is empty.")
                 snapshot = collect_snapshot(families)
                 output_path = append_snapshot(snapshot)
-                next_time = datetime.now(timezone.utc) + timedelta(
-                    minutes=self.monitor_interval_minutes
+                scheduled_start = _next_cadence_start(
+                    scheduled_start,
+                    cadence_seconds,
+                    time.monotonic(),
                 )
+                wait_seconds = max(0.0, scheduled_start - time.monotonic())
+                next_time = datetime.now(timezone.utc) + timedelta(seconds=wait_seconds)
                 violations = sum(
                     family.get("violation_count", 0)
                     for family in snapshot.get("families", [])
@@ -332,7 +374,7 @@ class DashboardState:
                     )
                     self.next_snapshot_at = next_time.isoformat()
                 self._start_scheduled_discovery_if_due()
-                if self.monitor_stop.wait(self.monitor_interval_minutes * 60):
+                if self.monitor_stop.wait(wait_seconds):
                     break
         except Exception as error:  # Surface background failures in the UI.
             with self.lock:
@@ -582,16 +624,16 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def _send_html(self, title: str, message: str, *, success: bool) -> None:
-        color = "#42dc8f" if success else "#ed6a6a"
+        color = "#ffffff" if success else "#ed6a6a"
         body = f"""<!doctype html>
 <html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width">
 <title>{html.escape(title)}</title>
-<body style="margin:0;background:#07100d;color:#edf5f0;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif">
+<body style="margin:0;background:#050505;color:#f4f4f4;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif">
 <main style="max-width:680px;margin:14vh auto;padding:32px;border:1px solid rgba(214,238,225,.18)">
 <p style="color:{color};letter-spacing:.16em;text-transform:uppercase">Antilego / ChatGPT</p>
 <h1 style="font-size:clamp(2.5rem,7vw,5rem);line-height:.92">{html.escape(title)}</h1>
 <p style="color:#93a49b;font-size:1.05rem;line-height:1.7">{html.escape(message)}</p>
-<a href="/" style="display:inline-block;margin-top:24px;padding:14px 18px;color:#07100d;background:{color};text-decoration:none;font-weight:700">Return to Antilego</a>
+<a href="/" style="display:inline-block;margin-top:24px;padding:14px 18px;color:#050505;background:{color};text-decoration:none;font-weight:700">Return to Antilego</a>
 </main></body></html>""".encode("utf-8")
         self.send_response(200 if success else 400)
         self.send_header("Content-Type", "text/html; charset=utf-8")

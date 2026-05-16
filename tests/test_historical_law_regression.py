@@ -18,7 +18,6 @@ class HistoricalLawRegressionTests(unittest.TestCase):
             {
                 "BTC March Upside": 65,
                 "BTC March Downside": 132,
-                "2026 NBA Champion": 132,
                 "Fed Rate Cut": 132,
             },
         )

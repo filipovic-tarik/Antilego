@@ -49,7 +49,7 @@ def check_exhaustive_outcomes(markets: list[dict], tolerance: float) -> list[dic
     """Exactly-one-winner outcome probabilities must sum to one."""
     total = sum(float(market["price"]) for market in markets)
     deviation = total - 1.0
-    if abs(deviation) <= tolerance:
+    if abs(deviation) <= tolerance + 1e-12:
         return []
     return [_violation("outcome sum", "1.0", abs(deviation), "≠")]
 
@@ -117,7 +117,11 @@ STRICT_ORDERING_LAWS = {
 }
 
 
-def evaluate_family(family: dict, exclusivity_tolerance: float = 0.005) -> dict:
+def evaluate_family(
+    family: dict,
+    exclusivity_tolerance: float = 0.005,
+    exhaustive_tolerance: float = 0.03,
+) -> dict:
     """Evaluate one market family using its registered probability law."""
     all_markets = family.get("markets", [])
     markets = [market for market in all_markets if market.get("price") is not None]
@@ -165,9 +169,12 @@ def evaluate_family(family: dict, exclusivity_tolerance: float = 0.005) -> dict:
             "error": f"{family_type} requires at least {minimum_count} markets",
         }
 
-    law_tolerance = (
-        0.0 if family_type in STRICT_ORDERING_LAWS else exclusivity_tolerance
-    )
+    if family_type in STRICT_ORDERING_LAWS:
+        law_tolerance = 0.0
+    elif family_type in {"exhaustive_outcomes", "mutually_exclusive"}:
+        law_tolerance = exhaustive_tolerance
+    else:
+        law_tolerance = exclusivity_tolerance
     violations = law(markets, law_tolerance)
     result = {
         "coherent": not violations,
