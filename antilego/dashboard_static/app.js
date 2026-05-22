@@ -58,10 +58,12 @@ function renderMarkets(families) {
   container.innerHTML = families.map((family) => {
     let label = "Waiting";
     let statusClass = "";
-    if (family.data_complete === false) { label = "Incomplete"; statusClass = "incomplete"; }
+    if (family.liquidity_status === "illiquid") { label = "Illiquid"; statusClass = "illiquid"; }
+    else if (family.data_complete === false) { label = "Incomplete"; statusClass = "incomplete"; }
     else if (family.coherent === true) { label = "Consistent"; statusClass = "good"; }
     else if (family.coherent === false) { label = "Violation"; statusClass = "bad"; }
-    const signal = family.coherent === false ? `${family.violation_count} found` : "-";
+    const signal = family.coherent === false ? `${family.violation_count} found` :
+      family.liquidity_status === "illiquid" ? "Watching" : "-";
     return `<div class="market-row" role="row">
       <span class="market-name"><strong>${escapeHtml(family.name)}</strong><small>${Math.round((family.confidence || 0) * 100)}% classification confidence</small></span>
       <span class="law-cell" tabindex="0" aria-label="${escapeHtml(lawDescriptions[family.type] || titleCase(family.type))}">
@@ -181,8 +183,10 @@ function renderLiveCharts(history) {
   container.dataset.signature = signature;
   container.innerHTML = families.map((family, index) => {
     const latest = family.points.at(-1) || {};
+    const chartLabel = latest.complete === false ? "No executable quote" : latest.violating ? "Violation" : "Consistent";
+    const chartClass = latest.complete === false ? "illiquid" : latest.violating ? "bad" : "good";
     return `<article class="live-chart-card">
-      <div><strong>${escapeHtml(family.name)}</strong><span class="status-pill ${latest.violating ? "bad" : "good"}">${latest.violating ? "Violation" : "Consistent"}</span></div>
+      <div><strong>${escapeHtml(family.name)}</strong><span class="status-pill ${chartClass}">${chartLabel}</span></div>
       <small>${escapeHtml(titleCase(family.law))} · ${escapeHtml(family.metric_label)} · ${escapeHtml(family.ideal_label)} · latest ${((Number(latest.value) || 0) * 100).toFixed(1)}%</small>
       <canvas data-chart-index="${index}" aria-label="Violation history for ${escapeHtml(family.name)}"></canvas>
     </article>`;

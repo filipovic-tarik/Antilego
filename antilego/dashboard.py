@@ -367,11 +367,16 @@ class DashboardState:
                     family.get("violation_count", 0)
                     for family in snapshot.get("families", [])
                 )
+                illiquid = sum(
+                    family.get("liquidity_status") == "illiquid"
+                    for family in snapshot.get("families", [])
+                )
                 self._record_violation_notifications(snapshot)
                 with self.lock:
                     self.monitor_message = (
                         f"Saved {len(snapshot['families'])} family result(s) to "
-                        f"{output_path.name}; {violations} violation(s) detected."
+                        f"{output_path.name}; {violations} executable violation(s), "
+                        f"{illiquid} illiquid watchlist family/families."
                     )
                     self.next_snapshot_at = next_time.isoformat()
                 self._start_scheduled_discovery_if_due()
@@ -557,6 +562,8 @@ class DashboardState:
                     ),
                     "coherent": latest.get("coherent"),
                     "data_complete": latest.get("data_complete"),
+                    "liquidity_status": latest.get("liquidity_status"),
+                    "target_shares": latest.get("target_shares"),
                     "violation_count": latest.get("violation_count", 0),
                     "missing_prices": latest.get("missing_prices", 0),
                     "violations": latest.get("violations", []),
