@@ -12,6 +12,7 @@ from antilego.dashboard import (
     DashboardServer,
     DashboardState,
     _next_cadence_start,
+    _partition_executable_families,
     _snapshot_history,
 )
 
@@ -101,11 +102,88 @@ class DashboardStateTests(unittest.TestCase):
         self.assertEqual(_next_cadence_start(100.0, 180.0, 156.0), 280.0)
         self.assertEqual(_next_cadence_start(100.0, 180.0, 301.0), 460.0)
 
+    def test_liquidity_partition_only_drops_confirmed_illiquid_families(self):
+        families = [
+            {"monitoring_key": "a", "name": "A"},
+            {"monitoring_key": "b", "name": "B"},
+            {"monitoring_key": "c", "name": "C"},
+        ]
+        snapshot = {"families": [
+            {"monitoring_key": "a", "name": "A", "liquidity_status": "executable"},
+            {"monitoring_key": "b", "name": "B", "liquidity_status": "illiquid"},
+            {"monitoring_key": "c", "name": "C", "liquidity_status": "incomplete"},
+        ]}
+        executable, illiquid, unknown = _partition_executable_families(
+            families, snapshot
+        )
+        self.assertEqual([family["name"] for family in executable], ["A"])
+        self.assertEqual([family["name"] for family in illiquid], ["B"])
+        self.assertEqual([family["name"] for family in unknown], ["C"])
+
     def test_empty_selection_does_not_approve_everything(self):
         state = DashboardState()
         state.pending_events = [{"event_id": "event-1", "approval_eligible": True}]
         with self.assertRaisesRegex(ValueError, "Select at least one"):
             state.approve_discovery([])
+
+    def test_approval_registers_only_families_with_executable_quotes(self):
+        def event(event_id):
+            return {
+                "event_id": event_id,
+                "event_slug": event_id,
+                "title": event_id.title(),
+                "approval_eligible": True,
+                "classification": {
+                    "relationship_found": True,
+                    "law": "deadline_nesting",
+                    "ordered_contract_ids": [f"{event_id}-early", f"{event_id}-late"],
+                    "confidence": 0.95,
+                    "requires_review": False,
+                    "reason": "Nested deadlines",
+                },
+                "contracts": [
+                    {
+                        "id": f"{event_id}-early",
+                        "label": "Early",
+                        "asset_id": f"{event_id}-early-asset",
+                    },
+                    {
+                        "id": f"{event_id}-late",
+                        "label": "Late",
+                        "asset_id": f"{event_id}-late-asset",
+                    },
+                ],
+            }
+
+        with tempfile.TemporaryDirectory() as directory:
+            registry = Path(directory) / "monitoring.json"
+            state = DashboardState()
+            state.pending_events = [event("liquid"), event("dry")]
+            snapshot = {
+                "families": [
+                    {
+                        "monitoring_key": "polymarket:event:liquid",
+                        "name": "Liquid",
+                        "liquidity_status": "executable",
+                    },
+                    {
+                        "monitoring_key": "polymarket:event:dry",
+                        "name": "Dry",
+                        "liquidity_status": "illiquid",
+                    },
+                ]
+            }
+            with (
+                patch("antilego.dashboard.DEFAULT_MONITORING_REGISTRY", registry),
+                patch("antilego.dashboard.collect_snapshot", return_value=snapshot),
+            ):
+                result = state.approve_discovery()
+            payload = json.loads(registry.read_text(encoding="utf-8"))
+
+        self.assertEqual(result["accepted"], ["polymarket:event:liquid"])
+        self.assertEqual(result["unexecutable"], ["dry"])
+        self.assertEqual([family["name"] for family in payload["families"]], ["Liquid"])
+        self.assertEqual(state.pending_events, [])
 
     def test_clear_all_removes_live_data_but_keeps_application(self):
         with tempfile.TemporaryDirectory() as directory:

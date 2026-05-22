@@ -22,7 +22,12 @@ from .chatgpt_plan import ChatGPTPlanSession
 from .contradiction_brain import PROBABILITY_LAWS
 from .market_discovery import discovery_report, write_discovery_report
 from .market_tracking import append_snapshot, collect_snapshot
-from .monitoring_registry import load_monitored_families, register_classified_events
+from .monitoring_registry import (
+    family_from_classification,
+    load_monitored_families,
+    register_classified_events,
+    write_monitored_families,
+)
 from .paths import (
     DEFAULT_MONITORING_REGISTRY,
     MONITORING_DIR,
@@ -129,6 +134,31 @@ def _next_cadence_start(previous_start: float, cadence_seconds: float, now: floa
     while next_start < now:
         next_start += cadence_seconds
     return next_start
+
+
+def _partition_executable_families(
+    families: list[dict], snapshot: dict
+) -> tuple[list[dict], list[dict], list[dict]]:
+    """Split registered families into executable, definitively illiquid, and unknown."""
+    results_by_key = {
+        (result.get("monitoring_key") or result.get("name")): result
+        for result in snapshot.get("families", [])
+        if isinstance(result, dict)
+    }
+    executable = []
+    illiquid = []
+    unknown = []
+    for family in families:
+        key = family.get("monitoring_key") or family.get("name")
+        result = results_by_key.get(key, {})
+        status = result.get("liquidity_status")
+        if status == "executable":
+            executable.append(family)
+        elif status == "illiquid":
+            illiquid.append(family)
+        else:
+            unknown.append(family)
+    return executable, illiquid, unknown
 
 
 class DashboardState:
@@ -290,24 +320,56 @@ class DashboardState:
             ]
         if not selected:
             raise ValueError("Select at least one eligible event group to approve.")
-        summary = register_classified_events(
-            selected,
-            registry_path=DEFAULT_MONITORING_REGISTRY,
-            minimum_confidence=0,
-            allow_review=True,
+        candidates = []
+        event_by_key = {}
+        for event in selected:
+            family = family_from_classification(
+                event,
+                event.get("classification") or {},
+                minimum_confidence=0,
+                allow_review=True,
+            )
+            if family is not None:
+                candidates.append(family)
+                event_by_key[family["monitoring_key"]] = event
+        snapshot = collect_snapshot(candidates) if candidates else {"families": []}
+        executable, _illiquid, _unknown = _partition_executable_families(
+            candidates, snapshot
         )
+        executable_keys = {family["monitoring_key"] for family in executable}
+        accepted_events = [event_by_key[key] for key in executable_keys]
+        if accepted_events:
+            summary = register_classified_events(
+                accepted_events,
+                registry_path=DEFAULT_MONITORING_REGISTRY,
+                minimum_confidence=0,
+                allow_review=True,
+            )
+        else:
+            summary = {
+                "accepted": [],
+                "skipped": [],
+                "family_count": len(load_monitored_families()),
+                "registry_path": str(DEFAULT_MONITORING_REGISTRY),
+            }
+        selected_ids = {str(event.get("event_id")) for event in selected}
+        skipped_ids = selected_ids - {
+            key.removeprefix("polymarket:event:") for key in executable_keys
+        }
+        summary["unexecutable"] = sorted(skipped_ids)
         accepted_ids = {
             key.removeprefix("polymarket:event:") for key in summary["accepted"]
         }
         with self.lock:
             self.pending_events = [
                 event for event in self.pending_events
-                if str(event.get("event_id")) not in accepted_ids
+                if str(event.get("event_id")) not in selected_ids
             ]
             self.discovery.update(
                 state="awaiting_approval" if self.pending_events else "complete",
                 message=(
-                    f"Approved {len(accepted_ids)} event group(s). "
+                    f"Added {len(accepted_ids)} executable event group(s); "
+                    f"skipped {len(skipped_ids)} without executable quotes. "
                     f"{len(self.pending_events)} still awaiting review."
                 ),
             )
@@ -354,8 +416,30 @@ class DashboardState:
                 families = load_monitored_families()
                 if not families:
                     raise RuntimeError("The monitoring registry is empty.")
-                snapshot = collect_snapshot(families)
-                output_path = append_snapshot(snapshot)
+                collected = collect_snapshot(families)
+                executable, illiquid_families, unknown = _partition_executable_families(
+                    families, collected
+                )
+                executable_keys = {
+                    family.get("monitoring_key") or family.get("name")
+                    for family in executable
+                }
+                snapshot = {
+                    **collected,
+                    "families": [
+                        result for result in collected.get("families", [])
+                        if (result.get("monitoring_key") or result.get("name"))
+                        in executable_keys
+                    ],
+                }
+                if illiquid_families:
+                    retained = [
+                        family for family in families if family not in illiquid_families
+                    ]
+                    write_monitored_families(retained)
+                output_path = (
+                    append_snapshot(snapshot) if snapshot["families"] else live_snapshot_path()
+                )
                 scheduled_start = _next_cadence_start(
                     scheduled_start,
                     cadence_seconds,
@@ -367,18 +451,23 @@ class DashboardState:
                     family.get("violation_count", 0)
                     for family in snapshot.get("families", [])
                 )
-                illiquid = sum(
-                    family.get("liquidity_status") == "illiquid"
-                    for family in snapshot.get("families", [])
-                )
                 self._record_violation_notifications(snapshot)
                 with self.lock:
                     self.monitor_message = (
                         f"Saved {len(snapshot['families'])} family result(s) to "
                         f"{output_path.name}; {violations} executable violation(s), "
-                        f"{illiquid} illiquid watchlist family/families."
+                        f"removed {len(illiquid_families)} unexecutable family/families, "
+                        f"and deferred {len(unknown)} with temporarily unavailable data."
                     )
                     self.next_snapshot_at = next_time.isoformat()
+                if not executable and not unknown:
+                    with self.lock:
+                        self.monitor_state = "stopped"
+                        self.monitor_message = (
+                            "No executable market families remain. Discover markets "
+                            "again to find new opportunities."
+                        )
+                    return
                 self._start_scheduled_discovery_if_due()
                 if self.monitor_stop.wait(wait_seconds):
                     break
@@ -389,7 +478,7 @@ class DashboardState:
                 self.next_snapshot_at = None
         finally:
             with self.lock:
-                if self.monitor_state != "error":
+                if self.monitor_state == "running":
                     self.monitor_state = "stopped"
                     self.monitor_message = "Monitoring stopped."
                 self.next_snapshot_at = None
