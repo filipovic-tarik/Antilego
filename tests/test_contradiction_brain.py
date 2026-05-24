@@ -18,6 +18,29 @@ class ContradictionBrainTests(unittest.TestCase):
         self.assertEqual(result["violation_count"], 1)
         self.assertAlmostEqual(result["violations"][0]["magnitude"], 0.12)
 
+    def test_survival_deadline_probability_must_decrease_over_time(self):
+        coherent = evaluate_family(
+            {
+                "type": "survival_deadline_nesting",
+                "markets": [
+                    {"label": "October", "price": 0.75},
+                    {"label": "November", "price": 0.63},
+                ],
+            }
+        )
+        violated = evaluate_family(
+            {
+                "type": "survival_deadline_nesting",
+                "markets": [
+                    {"label": "October", "price": 0.45},
+                    {"label": "November", "price": 0.63},
+                ],
+            }
+        )
+        self.assertTrue(coherent["coherent"])
+        self.assertFalse(violated["coherent"])
+        self.assertEqual(violated["violations"][0]["pair"], "October < November")
+
     def test_threshold_chain_coherent(self):
         result = evaluate_family(
             {
@@ -120,6 +143,7 @@ class ContradictionBrainTests(unittest.TestCase):
 
     def test_probability_law_registry_is_explicit(self):
         self.assertIn("deadline_nesting", PROBABILITY_LAWS)
+        self.assertIn("survival_deadline_nesting", PROBABILITY_LAWS)
         self.assertIn("threshold_chain", PROBABILITY_LAWS)
         self.assertIn("exhaustive_outcomes", PROBABILITY_LAWS)
         self.assertIn("complements", PROBABILITY_LAWS)

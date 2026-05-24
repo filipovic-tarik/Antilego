@@ -118,6 +118,7 @@ class RelationshipIntelligenceTests(unittest.TestCase):
 
     def test_supported_laws_match_engine_vocabulary(self):
         self.assertIn("deadline_nesting", SUPPORTED_LAWS)
+        self.assertIn("survival_deadline_nesting", SUPPORTED_LAWS)
         self.assertIn("logical_implication", SUPPORTED_LAWS)
         self.assertNotIn("mutually_exclusive", SUPPORTED_LAWS)
 

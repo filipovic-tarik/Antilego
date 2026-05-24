@@ -33,6 +33,20 @@ def check_deadline_monotonicity(markets: list[dict], tolerance: float) -> list[d
     return violations
 
 
+def check_survival_deadline_monotonicity(
+    markets: list[dict], tolerance: float
+) -> list[dict]:
+    """Continuing through an earlier date cannot be less likely than later."""
+    violations = []
+    for earlier, later in zip(markets, markets[1:]):
+        excess = float(later["price"]) - float(earlier["price"])
+        if excess > tolerance:
+            violations.append(
+                _violation(earlier["label"], later["label"], excess, "<")
+            )
+    return violations
+
+
 def check_threshold_monotonicity(markets: list[dict], tolerance: float) -> list[dict]:
     """Easier thresholds cannot be less likely than harder ordered thresholds."""
     violations = []
@@ -89,6 +103,7 @@ def check_logical_implication(markets: list[dict], tolerance: float) -> list[dic
 # that actually describe an exhaustive, exactly-one-winner outcome set.
 PROBABILITY_LAWS: dict[str, ProbabilityLaw] = {
     "deadline_nesting": check_deadline_monotonicity,
+    "survival_deadline_nesting": check_survival_deadline_monotonicity,
     "threshold_chain": check_threshold_monotonicity,
     "exhaustive_outcomes": check_exhaustive_outcomes,
     "mutually_exclusive": check_exhaustive_outcomes,
@@ -103,6 +118,7 @@ LAW_MARKET_REQUIREMENTS = {
 
 LAW_MINIMUM_MARKETS = {
     "deadline_nesting": 2,
+    "survival_deadline_nesting": 2,
     "threshold_chain": 2,
     "exhaustive_outcomes": 2,
     "mutually_exclusive": 2,
@@ -112,6 +128,7 @@ LAW_MINIMUM_MARKETS = {
 
 STRICT_ORDERING_LAWS = {
     "deadline_nesting",
+    "survival_deadline_nesting",
     "threshold_chain",
     "logical_implication",
 }
@@ -284,7 +301,7 @@ def _evaluate_executable_family(
         if incomplete:
             return incomplete
         for left, right in zip(markets, markets[1:]):
-            if family_type == "threshold_chain":
+            if family_type in {"threshold_chain", "survival_deadline_nesting"}:
                 excess = float(right["sell_price"]) - float(left["buy_price"])
                 if excess > 0:
                     violations.append(_violation(left["label"], right["label"], excess, "<"))
