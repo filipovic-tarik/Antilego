@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
@@ -56,6 +57,15 @@ def fetch_order_book(token_id: str, timeout: float = 10) -> dict:
             "min_order_size": max(0.0, minimum),
             "book_timestamp": payload.get("timestamp"),
         }
+    except urllib.error.HTTPError as error:
+        status = "no_order_book" if error.code == 404 else "unavailable"
+        return {
+            "status": status,
+            "bids": [],
+            "asks": [],
+            "min_order_size": DEFAULT_EXECUTABLE_SHARES,
+            "book_timestamp": None,
+        }
     except (OSError, ValueError, TypeError, json.JSONDecodeError):
         return {
             "status": "unavailable",
@@ -101,13 +111,11 @@ def executable_quote(book: dict, shares: float) -> dict:
     buy_price, ask_depth = _vwap(book.get("asks", []), shares)
     sell_price, bid_depth = _vwap(book.get("bids", []), shares)
     status = str(book.get("status") or "unavailable")
-    if status != "unavailable":
+    if status not in {"unavailable", "no_order_book", "empty_book"}:
         if buy_price is not None and sell_price is not None:
             status = "executable"
         elif book.get("bids") or book.get("asks"):
             status = "illiquid"
-        else:
-            status = "empty_book"
     return {
         "buy_price": buy_price,
         "sell_price": sell_price,

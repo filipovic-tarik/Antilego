@@ -2,17 +2,40 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
+from urllib.error import HTTPError
 
 from antilego.antilego_engine import analyze_archive
 from antilego.market_tracking import (
     append_snapshot,
     collect_snapshot,
     executable_quote,
+    fetch_order_book,
     run_collection,
 )
 
 
 class OfflinePipelineTests(unittest.TestCase):
+    @patch("antilego.market_tracking.urllib.request.urlopen")
+    def test_missing_clob_book_is_definitively_unexecutable(self, urlopen):
+        urlopen.side_effect = HTTPError(
+            "https://clob.polymarket.com/book",
+            404,
+            "Not Found",
+            None,
+            None,
+        )
+        book = fetch_order_book("missing-token")
+        quote = executable_quote(book, 5)
+        self.assertEqual(book["status"], "no_order_book")
+        self.assertEqual(quote["quote_status"], "no_order_book")
+
+    @patch("antilego.market_tracking.urllib.request.urlopen")
+    def test_network_failure_remains_temporarily_unavailable(self, urlopen):
+        urlopen.side_effect = TimeoutError("timed out")
+        book = fetch_order_book("temporarily-unavailable-token")
+        self.assertEqual(book["status"], "unavailable")
+
     def test_executable_quote_uses_depth_weighted_prices(self):
         quote = executable_quote(
             {
