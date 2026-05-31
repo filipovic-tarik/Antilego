@@ -124,8 +124,9 @@ function drawChart(canvas, family) {
   const plotWidth = Math.max(1, width - pad.left - pad.right);
   const plotHeight = Math.max(1, height - pad.top - pad.bottom);
   const points = family.points || [];
+  const probabilityMode = family.chart_mode === "market_probabilities";
   const idealValue = Number(family.ideal_value) || 0;
-  const maxValue = Math.max(0.01, idealValue, ...points.map((point) => Number(point.value) || 0)) * 1.12;
+  const maxValue = probabilityMode ? 1 : Math.max(0.01, idealValue, ...points.map((point) => Number(point.value) || 0)) * 1.12;
   const x = (index) => pad.left + (points.length <= 1 ? plotWidth / 2 : index * plotWidth / (points.length - 1));
   const y = (value) => pad.top + plotHeight - ((Number(value) || 0) / maxValue) * plotHeight;
 
@@ -136,16 +137,18 @@ function drawChart(canvas, family) {
     const py = pad.top + row * plotHeight / 3;
     ctx.beginPath(); ctx.moveTo(pad.left, py); ctx.lineTo(width - pad.right, py); ctx.stroke();
   }
-  const idealY = y(idealValue);
-  ctx.save();
-  ctx.setLineDash([6, 5]);
-  ctx.strokeStyle = "#42dc8f";
-  ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(pad.left, idealY); ctx.lineTo(width - pad.right, idealY); ctx.stroke();
-  ctx.restore();
-  ctx.fillStyle = "#42dc8f";
-  const idealText = `${(idealValue * 100).toFixed(0)}% ideal`;
-  ctx.fillText(idealText, width - pad.right - ctx.measureText(idealText).width, Math.max(pad.top + 11, idealY - 6));
+  if (!probabilityMode) {
+    const idealY = y(idealValue);
+    ctx.save();
+    ctx.setLineDash([6, 5]);
+    ctx.strokeStyle = "#42dc8f";
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(pad.left, idealY); ctx.lineTo(width - pad.right, idealY); ctx.stroke();
+    ctx.restore();
+    ctx.fillStyle = "#42dc8f";
+    const idealText = `${(idealValue * 100).toFixed(0)}% ideal`;
+    ctx.fillText(idealText, width - pad.right - ctx.measureText(idealText).width, Math.max(pad.top + 11, idealY - 6));
+  }
   points.forEach((point, index) => {
     if (!point.violating) return;
     const start = index === 0 ? pad.left : (x(index - 1) + x(index)) / 2;
@@ -153,7 +156,20 @@ function drawChart(canvas, family) {
     ctx.fillStyle = "rgba(237,106,106,.20)";
     ctx.fillRect(start, pad.top, end - start, plotHeight);
   });
-  if (points.length) {
+  if (probabilityMode) {
+    const palette = ["#f2f2f2", "#7aa2d6", "#d9a65a", "#83b99a", "#b49ac8", "#d47f7f", "#76b9c7", "#b7af72", "#9d9d9d", "#c28ca6"];
+    (family.market_series || []).forEach((series, seriesIndex) => {
+      if (!series.points?.length) return;
+      ctx.beginPath();
+      series.points.forEach((point, index) => {
+        if (index === 0) ctx.moveTo(x(index), y(point.value));
+        else ctx.lineTo(x(index), y(point.value));
+      });
+      ctx.strokeStyle = palette[seriesIndex % palette.length];
+      ctx.lineWidth = seriesIndex === 0 ? 2 : 1.5;
+      ctx.stroke();
+    });
+  } else if (points.length) {
     ctx.beginPath();
     points.forEach((point, index) => {
       if (index === 0) ctx.moveTo(x(index), y(point.value));
@@ -162,7 +178,8 @@ function drawChart(canvas, family) {
     ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 2; ctx.stroke();
   }
   ctx.fillStyle = "#7f9187";
-  ctx.fillText(`${(maxValue * 100).toFixed(1)}%`, 4, pad.top + 4);
+  ctx.fillText(probabilityMode ? "100%" : `${(maxValue * 100).toFixed(1)}%`, 4, pad.top + 4);
+  if (probabilityMode) ctx.fillText("50%", 9, pad.top + plotHeight / 2 + 4);
   ctx.fillText("0%", 15, pad.top + plotHeight + 4);
   if (points.length) {
     ctx.fillText(formatTime(points[0].timestamp), pad.left, height - 7);
@@ -179,17 +196,25 @@ function renderLiveCharts(history) {
     container.innerHTML = '<div class="empty-state">The live charts will appear after the first snapshot.</div>';
     return;
   }
-  const signature = families.map((family) => `${family.name}:${family.points.length}:${family.points.at(-1)?.timestamp}`).join("|");
+  const signature = families.map((family) => `${family.name}:${family.points.length}:${family.market_series?.length || 0}:${family.points.at(-1)?.timestamp}`).join("|");
   if (container.dataset.signature === signature) return;
   container.dataset.signature = signature;
   container.innerHTML = families.map((family, index) => {
     const latest = family.points.at(-1) || {};
     const chartLabel = latest.complete === false ? "No executable quote" : latest.violating ? "Violation" : "Consistent";
     const chartClass = latest.complete === false ? "illiquid" : latest.violating ? "bad" : "good";
+    const probabilityMode = family.chart_mode === "market_probabilities";
+    const palette = ["#f2f2f2", "#7aa2d6", "#d9a65a", "#83b99a", "#b49ac8", "#d47f7f", "#76b9c7", "#b7af72", "#9d9d9d", "#c28ca6"];
+    const legend = probabilityMode ? `<div class="chart-legend">${(family.market_series || []).map((series, seriesIndex) => {
+      const last = series.points?.at(-1);
+      return `<span><i style="--series-color:${palette[seriesIndex % palette.length]}"></i>${escapeHtml(series.label)} <b>${last ? `${(Number(last.value) * 100).toFixed(1)}%` : "-"}</b></span>`;
+    }).join("")}</div>` : "";
+    const latestText = probabilityMode ? family.ideal_label : `latest ${((Number(latest.value) || 0) * 100).toFixed(1)}%`;
     return `<article class="live-chart-card">
       <div><strong>${escapeHtml(family.name)}</strong><span class="status-pill ${chartClass}">${chartLabel}</span></div>
-      <small>${escapeHtml(titleCase(family.law))} · ${escapeHtml(family.metric_label)} · ${escapeHtml(family.ideal_label)} · latest ${((Number(latest.value) || 0) * 100).toFixed(1)}%</small>
-      <canvas data-chart-index="${index}" aria-label="Violation history for ${escapeHtml(family.name)}"></canvas>
+      <small>${escapeHtml(titleCase(family.law))} · ${escapeHtml(family.metric_label)} · ${escapeHtml(latestText)}</small>
+      ${legend}
+      <canvas data-chart-index="${index}" aria-label="${probabilityMode ? "Contract probability" : "Violation"} history for ${escapeHtml(family.name)}"></canvas>
     </article>`;
   }).join("");
   container.querySelectorAll("canvas").forEach((canvas) => drawChart(canvas, families[Number(canvas.dataset.chartIndex)]));

@@ -249,6 +249,32 @@ class DashboardStateTests(unittest.TestCase):
         self.assertEqual(family["points"][0]["value"], 1.02)
         self.assertEqual(family["metric_label"], "combined probability")
 
+    def test_ordered_law_history_exposes_each_contract_probability(self):
+        record = {
+            "timestamp": "2026-10-13T10:00:00+00:00",
+            "families": [{
+                "name": "Ceasefire continues",
+                "type": "survival_deadline_nesting",
+                "coherent": True,
+                "violations": [],
+                "markets": [
+                    {"label": "October", "buy_price": 0.72, "sell_price": 0.68},
+                    {"label": "November", "buy_price": 0.62, "sell_price": 0.58},
+                ],
+            }],
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "snapshots.jsonl"
+            path.write_text(json.dumps(record), encoding="utf-8")
+            family = _snapshot_history(path)["families"][0]
+        self.assertEqual(family["chart_mode"], "market_probabilities")
+        self.assertEqual(family["metric_label"], "executable probability by contract")
+        self.assertEqual(
+            [series["label"] for series in family["market_series"]],
+            ["October", "November"],
+        )
+        self.assertAlmostEqual(family["market_series"][0]["points"][0]["value"], 0.70)
+
     @patch("antilego.dashboard.subprocess.Popen")
     def test_notification_only_fires_when_family_enters_violation(self, popen):
         state = DashboardState()
