@@ -101,6 +101,8 @@ class OfflinePipelineTests(unittest.TestCase):
         self.assertEqual(result["liquidity_status"], "executable")
         self.assertAlmostEqual(result["sum"], 0.85)
         self.assertEqual(result["price_side"], "buy")
+        self.assertAlmostEqual(result["buy_total"], 0.85)
+        self.assertAlmostEqual(result["sell_total"], 0.79)
 
     def test_survival_deadline_uses_executable_reverse_ordering(self):
         family = {

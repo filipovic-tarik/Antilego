@@ -125,8 +125,11 @@ function drawChart(canvas, family) {
   const plotHeight = Math.max(1, height - pad.top - pad.bottom);
   const points = family.points || [];
   const probabilityMode = family.chart_mode === "market_probabilities";
+  const multiSeriesMode = probabilityMode || family.chart_mode === "basket_totals";
+  const isFiniteValue = (value) => value !== null && value !== "" && Number.isFinite(Number(value));
   const idealValue = Number(family.ideal_value) || 0;
-  const maxValue = probabilityMode ? 1 : Math.max(0.01, idealValue, ...points.map((point) => Number(point.value) || 0)) * 1.12;
+  const seriesValues = (family.market_series || []).flatMap((series) => (series.points || []).filter((point) => isFiniteValue(point.value)).map((point) => Number(point.value)));
+  const maxValue = probabilityMode ? 1 : Math.max(0.01, idealValue, ...points.map((point) => Number(point.value) || 0), ...seriesValues) * 1.12;
   const x = (index) => pad.left + (points.length <= 1 ? plotWidth / 2 : index * plotWidth / (points.length - 1));
   const y = (value) => pad.top + plotHeight - ((Number(value) || 0) / maxValue) * plotHeight;
 
@@ -138,6 +141,12 @@ function drawChart(canvas, family) {
     ctx.beginPath(); ctx.moveTo(pad.left, py); ctx.lineTo(width - pad.right, py); ctx.stroke();
   }
   if (!probabilityMode) {
+    if (family.chart_mode === "basket_totals" && Number.isFinite(Number(family.lower_bound)) && Number.isFinite(Number(family.upper_bound))) {
+      const bandTop = y(family.upper_bound);
+      const bandBottom = y(family.lower_bound);
+      ctx.fillStyle = "rgba(66,220,143,.08)";
+      ctx.fillRect(pad.left, bandTop, plotWidth, bandBottom - bandTop);
+    }
     const idealY = y(idealValue);
     ctx.save();
     ctx.setLineDash([6, 5]);
@@ -156,14 +165,43 @@ function drawChart(canvas, family) {
     ctx.fillStyle = "rgba(237,106,106,.20)";
     ctx.fillRect(start, pad.top, end - start, plotHeight);
   });
-  if (probabilityMode) {
+  if (multiSeriesMode) {
     const palette = ["#f2f2f2", "#7aa2d6", "#d9a65a", "#83b99a", "#b49ac8", "#d47f7f", "#76b9c7", "#b7af72", "#9d9d9d", "#c28ca6"];
     (family.market_series || []).forEach((series, seriesIndex) => {
       if (!series.points?.length) return;
+      if (probabilityMode) {
+        let segment = [];
+        const paintBand = () => {
+          if (!segment.length) return;
+          ctx.beginPath();
+          segment.forEach((point, index) => {
+            const px = x(Number.isInteger(point.index) ? point.index : index);
+            if (index === 0) ctx.moveTo(px, y(point.buy_value)); else ctx.lineTo(px, y(point.buy_value));
+          });
+          [...segment].reverse().forEach((point, reverseIndex) => {
+            const index = segment.length - 1 - reverseIndex;
+            ctx.lineTo(x(Number.isInteger(point.index) ? point.index : index), y(point.sell_value));
+          });
+          ctx.closePath();
+          ctx.globalAlpha = .12;
+          ctx.fillStyle = palette[seriesIndex % palette.length];
+          ctx.fill();
+          ctx.globalAlpha = 1;
+          segment = [];
+        };
+        series.points.forEach((point) => {
+          if (isFiniteValue(point.buy_value) && isFiniteValue(point.sell_value)) segment.push(point);
+          else paintBand();
+        });
+        paintBand();
+      }
       ctx.beginPath();
+      let drawing = false;
       series.points.forEach((point, index) => {
-        if (index === 0) ctx.moveTo(x(index), y(point.value));
-        else ctx.lineTo(x(index), y(point.value));
+        if (!isFiniteValue(point.value)) { drawing = false; return; }
+        const px = x(Number.isInteger(point.index) ? point.index : index);
+        if (!drawing) { ctx.moveTo(px, y(point.value)); drawing = true; }
+        else ctx.lineTo(px, y(point.value));
       });
       ctx.strokeStyle = palette[seriesIndex % palette.length];
       ctx.lineWidth = seriesIndex === 0 ? 2 : 1.5;
@@ -204,16 +242,22 @@ function renderLiveCharts(history) {
     const chartLabel = latest.complete === false ? "No executable quote" : latest.violating ? "Violation" : "Consistent";
     const chartClass = latest.complete === false ? "illiquid" : latest.violating ? "bad" : "good";
     const probabilityMode = family.chart_mode === "market_probabilities";
+    const multiSeriesMode = probabilityMode || family.chart_mode === "basket_totals";
     const palette = ["#f2f2f2", "#7aa2d6", "#d9a65a", "#83b99a", "#b49ac8", "#d47f7f", "#76b9c7", "#b7af72", "#9d9d9d", "#c28ca6"];
-    const legend = probabilityMode ? `<div class="chart-legend">${(family.market_series || []).map((series, seriesIndex) => {
+    const legendSeries = multiSeriesMode ? (family.market_series || []) : [{ label: family.metric_label, points: family.points || [] }];
+    const legend = `<div class="chart-legend">${legendSeries.map((series, seriesIndex) => {
       const last = series.points?.at(-1);
-      return `<span><i style="--series-color:${palette[seriesIndex % palette.length]}"></i>${escapeHtml(series.label)} <b>${last ? `${(Number(last.value) * 100).toFixed(1)}%` : "-"}</b></span>`;
-    }).join("")}</div>` : "";
-    const latestText = probabilityMode ? family.ideal_label : `latest ${((Number(latest.value) || 0) * 100).toFixed(1)}%`;
+      const value = last && last.value !== null && last.value !== "" && Number.isFinite(Number(last.value)) ? `${(Number(last.value) * 100).toFixed(1)}%` : "-";
+      return `<span style="--series-color:${palette[seriesIndex % palette.length]}"><i></i>${escapeHtml(series.label)} <b>${value}</b></span>`;
+    }).join("")}</div>`;
+    const latestText = multiSeriesMode ? family.ideal_label : `latest ${((Number(latest.value) || 0) * 100).toFixed(1)}%`;
+    const crossings = probabilityMode ? (family.latest_violations || []).filter((item) => item.left && item.right).map((item) => `${item.left} ↔ ${item.right} (${(Number(item.magnitude) * 100).toFixed(1)}%)`) : [];
+    const crossingNote = crossings.length ? `<p class="chart-alert">Executable crossing: ${escapeHtml(crossings.join(", "))}</p>` : "";
     return `<article class="live-chart-card">
       <div><strong>${escapeHtml(family.name)}</strong><span class="status-pill ${chartClass}">${chartLabel}</span></div>
       <small>${escapeHtml(titleCase(family.law))} · ${escapeHtml(family.metric_label)} · ${escapeHtml(latestText)}</small>
       ${legend}
+      ${crossingNote}
       <canvas data-chart-index="${index}" aria-label="${probabilityMode ? "Contract probability" : "Violation"} history for ${escapeHtml(family.name)}"></canvas>
     </article>`;
   }).join("");
@@ -314,11 +358,11 @@ $("#enable-notifications").addEventListener("click", async () => {
 });
 $("#clear-all").addEventListener("click", async () => {
   const confirmed = window.confirm(
-    "Clear all discovered events, monitored markets, snapshots, reports, and graphs? This cannot be undone."
+    "Reset discovered events, monitored markets, and the live dashboard? Existing snapshots, reports, and graph files will remain in the archive folder."
   );
   if (!confirmed) return;
   selectedEventIds.clear();
-  await action("/api/clear-all", {}, "All Antilego market data and graphs were cleared.");
+  await action("/api/clear-all", {}, "Dashboard reset. Existing archive files were preserved.");
 });
 $("#open-folder").addEventListener("click", () => action("/api/open-folder", {}, "Opened the weekly data folder."));
 $("#quit-app").addEventListener("click", async () => {

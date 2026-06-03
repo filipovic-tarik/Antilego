@@ -322,6 +322,11 @@ def _evaluate_executable_family(
     if result_sum is not None:
         result["sum"] = result_sum
         result["price_side"] = price_side
+    if family_type in {"exhaustive_outcomes", "mutually_exclusive", "complements"}:
+        result["buy_total"] = buy_total
+        result["sell_total"] = sell_total
+    elif family_type == "non_exhaustive_exclusivity":
+        result["sell_total"] = result_sum
     return result
 
 
