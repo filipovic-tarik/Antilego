@@ -4,7 +4,7 @@ let toastTimer = null;
 let lastNotificationId = null;
 const selectedEventIds = new Set();
 const lawDescriptions = {
-  deadline_nesting: "For an event that happens by a deadline, an earlier date cannot be more likely than a later date; the event does not need to happen at all.",
+  deadline_nesting: "For an event that happens by a deadline, an earlier date cannot be more likely than a later date.",
   survival_deadline_nesting: "For an ongoing state, continuing through an earlier date cannot be less likely than continuing through a later date.",
   threshold_chain: "An easier threshold must be at least as likely as every harder threshold after it.",
   exhaustive_outcomes: "Mutually exclusive outcomes that cover every possibility should total 100%, with a 3% tolerance.",
