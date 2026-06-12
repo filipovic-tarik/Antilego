@@ -290,7 +290,13 @@ function render(status) {
   document.body.classList.toggle("has-error", errors);
   $("#hero-status").textContent = errors ? "Action needed" : running ? "Monitoring live" : discovering ? "Discovering" : connected ? "Ready" : "Connect ChatGPT";
   $("#hero-message").textContent = status.monitor.state === "error" ? status.monitor.message : status.discovery.state === "error" ? status.discovery.message : running ? status.monitor.message : status.discovery.message;
-  $("#metric-monitor").textContent = titleCase(status.monitor.state);
+  const monitorLabel = titleCase(status.monitor.state);
+  const monitorIcon = running
+    ? '<span class="monitor-wave" aria-hidden="true"><i></i><i></i><i></i></span>'
+    : status.monitor.state === "stopped"
+      ? '<i class="monitor-stop-icon" aria-hidden="true"></i>'
+      : "";
+  $("#metric-monitor").innerHTML = `<span>${escapeHtml(monitorLabel)}</span>${monitorIcon}`;
   $("#metric-families").textContent = status.family_count;
   $("#metric-snapshot").textContent = formatTime(status.latest_snapshot_at);
   $("#metric-violations").textContent = status.latest_violation_count;
