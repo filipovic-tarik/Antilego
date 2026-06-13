@@ -15,7 +15,7 @@ import webbrowser
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 from .chatgpt_plan import ChatGPTPlanSession
 from .contradiction_brain import PROBABILITY_LAWS
@@ -50,6 +50,13 @@ ORDERED_PROBABILITY_LAWS = {
     "logical_implication",
 }
 EXACT_SUM_LAWS = {"exhaustive_outcomes", "mutually_exclusive", "complements"}
+
+
+def _polymarket_event_url(family: dict) -> str | None:
+    event_slug = str(family.get("source", {}).get("event_slug") or "").strip()
+    if not event_slug:
+        return None
+    return f"https://polymarket.com/event/{quote(event_slug, safe='')}"
 
 
 def _latest_jsonl_record(path: Path) -> dict | None:
@@ -797,6 +804,7 @@ class DashboardState:
                 {
                     "name": family.get("name"),
                     "type": family.get("type"),
+                    "polymarket_url": _polymarket_event_url(family),
                     "market_count": len(family.get("markets", [])),
                     "confidence": family.get("source", {}).get(
                         "classification_confidence"

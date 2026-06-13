@@ -148,7 +148,7 @@ input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 2px r
 .approval-item.disabled .approval-status { color: var(--red); }
 .approval-actions { display: flex; gap: 10px; align-items: center; margin-top: 20px; }
 .text-button { padding: 0; border: 0; color: var(--accent); background: transparent; font-size: .75rem; text-decoration: underline; text-underline-offset: 4px; }
-.market-row { display: grid; grid-template-columns: 2fr 1.35fr .55fr .8fr .65fr; gap: 18px; align-items: center; padding: 15px 8px; border-bottom: 1px solid rgba(255,255,255,.07); }
+.market-row { display: grid; grid-template-columns: 2fr 1.35fr .55fr .8fr .65fr .55fr; gap: 18px; align-items: center; padding: 15px 8px; border-bottom: 1px solid rgba(255,255,255,.07); }
 .table-header { color: var(--muted); font-size: .65rem; letter-spacing: .12em; text-transform: uppercase; }
 .market-rows .market-row { font-size: .8rem; }
 .market-name strong { display: block; margin-bottom: 4px; }
@@ -164,6 +164,9 @@ input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 2px r
 .status-pill.illiquid { color: #c9b58c; border-color: rgba(201,181,140,.4); }
 .signal { font-weight: 700; }
 .signal.bad { color: var(--red); }
+.market-link { width: max-content; color: var(--text); font-size: .7rem; text-decoration: underline; text-decoration-color: rgba(255,255,255,.35); text-underline-offset: 4px; }
+.market-link:hover, .market-link:focus-visible { text-decoration-color: currentColor; }
+.market-link.unavailable { color: var(--muted); text-decoration: none; }
 .empty-state { padding: 55px 10px; color: var(--muted); text-align: center; }
 
 .section-note { color: var(--muted); font-size: .8rem; }
@@ -213,7 +216,7 @@ footer { display: flex; justify-content: space-between; width: min(1240px, calc(
   .approval-status { grid-column: 3; }
   .account-actions { min-width: 0; }
   .market-row { grid-template-columns: 1.6fr 1fr .6fr; }
-  .market-row > :nth-child(3), .market-row > :nth-child(4) { display: none; }
+  .market-row > :nth-child(3), .market-row > :nth-child(4), .market-row > :nth-child(5) { display: none; }
   .explanation { grid-template-columns: 1fr; gap: 25px; }
 }
 

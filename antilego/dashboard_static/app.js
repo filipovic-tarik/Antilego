@@ -65,6 +65,9 @@ function renderMarkets(families) {
     else if (family.coherent === false) { label = "Violation"; statusClass = "bad"; }
     const signal = family.coherent === false ? `${family.violation_count} found` :
       family.liquidity_status === "illiquid" ? "Watching" : "-";
+    const marketLink = family.polymarket_url
+      ? `<a class="market-link" href="${escapeHtml(family.polymarket_url)}" target="_blank" rel="noopener noreferrer" aria-label="Open ${escapeHtml(family.name)} on Polymarket">View ↗</a>`
+      : '<span class="market-link unavailable">-</span>';
     return `<div class="market-row" role="row">
       <span class="market-name"><strong>${escapeHtml(family.name)}</strong><small>${Math.round((family.confidence || 0) * 100)}% classification confidence</small></span>
       <span class="law-cell" tabindex="0" aria-label="${escapeHtml(lawDescriptions[family.type] || titleCase(family.type))}">
@@ -73,6 +76,7 @@ function renderMarkets(families) {
       </span><span>${escapeHtml(family.market_count)}</span>
       <span class="status-pill ${statusClass}">${label}</span>
       <span class="signal ${family.coherent === false ? "bad" : ""}">${signal}</span>
+      ${marketLink}
     </div>`;
   }).join("");
 }
