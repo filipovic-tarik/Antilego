@@ -48,7 +48,7 @@ main { width: min(1240px, calc(100% - 48px)); margin: 0 auto; }
 .hero { display: grid; grid-template-columns: 1fr 310px; gap: 80px; align-items: end; min-height: 520px; padding: 105px 0 70px; }
 .eyebrow, .panel-heading p, .explanation > p { margin: 0 0 18px; color: var(--accent); font-size: .66rem; font-weight: 700; letter-spacing: .2em; text-transform: uppercase; }
 h1, h2, p { margin-top: 0; }
-h1 { max-width: 850px; margin-bottom: 28px; font-family: Georgia, "Times New Roman", serif; font-size: clamp(3.7rem, 6.5vw, 6.6rem); font-weight: 400; line-height: .92; letter-spacing: -.035em; }
+h1 { max-width: 850px; margin-bottom: 28px; font-size: clamp(3.7rem, 6.5vw, 6.6rem); font-weight: 500; line-height: .92; letter-spacing: -.035em; }
 .hero-copy { max-width: 670px; margin-bottom: 0; color: var(--muted); font-size: 1.04rem; line-height: 1.75; }
 .hero-status { padding: 24px 0 4px 25px; border-left: 1px solid var(--line); }
 .status-label { display: block; margin-bottom: 17px; color: var(--muted); font-size: .68rem; letter-spacing: .15em; text-transform: uppercase; }
@@ -63,13 +63,21 @@ h1 { max-width: 850px; margin-bottom: 28px; font-family: Georgia, "Times New Rom
 #metric-monitor { display: flex; align-items: center; gap: 13px; }
 #metric-monitor > span { margin: 0; color: inherit; font-size: inherit; letter-spacing: inherit; text-transform: none; }
 .monitor-wave { display: inline-flex !important; align-items: center; gap: 5px; margin: 2px 0 0 !important; }
-.monitor-wave i { width: 0; height: 0; border-top: 6px solid transparent; border-bottom: 6px solid transparent; border-left: 8px solid currentColor; color: rgba(255, 255, 255, .22); animation: monitor-wave 1.8s ease-in-out infinite; }
-.monitor-wave i:nth-child(2) { animation-delay: .18s; }
-.monitor-wave i:nth-child(3) { animation-delay: .36s; }
+.monitor-wave i { width: 0; height: 0; border-top: 6px solid transparent; border-bottom: 6px solid transparent; border-left: 8px solid currentColor; color: rgba(255, 255, 255, .22); animation: monitor-wave-first 2.1s ease-in-out infinite; }
+.monitor-wave i:nth-child(2) { animation-name: monitor-wave-second; }
+.monitor-wave i:nth-child(3) { animation-name: monitor-wave-third; }
 .monitor-stop-icon { width: 11px; height: 11px; margin-top: 2px; border: 1px solid rgba(255, 255, 255, .48); background: rgba(255, 255, 255, .12); }
-@keyframes monitor-wave {
-  0%, 56%, 100% { color: rgba(255, 255, 255, .22); filter: none; }
-  20% { color: #fff; filter: drop-shadow(0 0 5px rgba(255, 255, 255, .72)); }
+@keyframes monitor-wave-first {
+  0%, 18%, 100% { color: rgba(255, 255, 255, .22); filter: none; }
+  8% { color: #fff; filter: drop-shadow(0 0 5px rgba(255, 255, 255, .72)); }
+}
+@keyframes monitor-wave-second {
+  0%, 24%, 42%, 100% { color: rgba(255, 255, 255, .22); filter: none; }
+  33% { color: #fff; filter: drop-shadow(0 0 5px rgba(255, 255, 255, .72)); }
+}
+@keyframes monitor-wave-third {
+  0%, 49%, 67%, 100% { color: rgba(255, 255, 255, .22); filter: none; }
+  58% { color: #fff; filter: drop-shadow(0 0 5px rgba(255, 255, 255, .72)); }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -196,7 +204,7 @@ input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 2px r
 .chart-alert { margin: 9px 0 0; color: #ffacac; font-size: .63rem; line-height: 1.4; }
 
 .explanation { display: grid; grid-template-columns: .55fr 1.1fr 1fr; gap: 60px; padding: 110px 0; }
-.explanation h2 { max-width: 480px; font-family: Georgia, "Times New Roman", serif; font-size: clamp(2.5rem, 4vw, 4.2rem); font-weight: 400; line-height: 1; letter-spacing: -.035em; }
+.explanation h2 { max-width: 480px; font-size: clamp(2.5rem, 4vw, 4.2rem); font-weight: 500; line-height: 1; letter-spacing: -.035em; }
 .explanation-grid { display: grid; gap: 20px; }
 .explanation-grid p { margin: 0; color: var(--muted); line-height: 1.7; }
 footer { display: flex; justify-content: space-between; width: min(1240px, calc(100% - 48px)); margin: 0 auto; padding: 28px 0 38px; border-top: 1px solid var(--line); color: var(--muted); font-size: .65rem; letter-spacing: .12em; }
