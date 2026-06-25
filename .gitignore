@@ -9,3 +9,6 @@ __pycache__/
 !.env.example
 archive/historical-test/
 monitoring/*.json
+build/
+dist/
+Antilego.spec

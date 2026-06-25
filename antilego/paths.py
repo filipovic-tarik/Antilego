@@ -2,11 +2,17 @@
 
 from datetime import date, datetime, timedelta
 from pathlib import Path
+import sys
 
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-ARCHIVE_DIR = PROJECT_ROOT / "archive"
-MONITORING_DIR = PROJECT_ROOT / "monitoring"
+PROJECT_ROOT = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent))
+DATA_ROOT = (
+    Path.home() / "Library" / "Application Support" / "Antilego"
+    if getattr(sys, "frozen", False)
+    else PROJECT_ROOT
+)
+ARCHIVE_DIR = DATA_ROOT / "archive"
+MONITORING_DIR = DATA_ROOT / "monitoring"
 DEFAULT_MONITORING_REGISTRY = MONITORING_DIR / "monitored_families.json"
 
 
