@@ -11,6 +11,8 @@ from antilego.dashboard import (
     DEFAULT_SNAPSHOT_INTERVAL_MINUTES,
     DashboardServer,
     DashboardState,
+    _estimate_violation_trades,
+    _fee_terms_by_asset,
     _next_cadence_start,
     _partition_executable_families,
     _polymarket_event_url,
@@ -96,6 +98,59 @@ class DashboardHTTPTests(unittest.TestCase):
 
 
 class DashboardStateTests(unittest.TestCase):
+    def test_gamma_fee_schedule_is_mapped_to_yes_asset(self):
+        event = {
+            "markets": [{
+                "clobTokenIds": '["yes-token", "no-token"]',
+                "outcomes": '["Yes", "No"]',
+                "feesEnabled": True,
+                "feeSchedule": {"rate": 0.07, "exponent": 1, "takerOnly": True},
+            }]
+        }
+        terms = _fee_terms_by_asset(event)
+        self.assertEqual(terms["yes-token"]["rate"], 0.07)
+        self.assertTrue(terms["yes-token"]["enabled"])
+        self.assertNotIn("no-token", terms)
+
+    def test_ordered_violation_reports_negative_net_after_taker_fees(self):
+        snapshot_family = {
+            "type": "threshold_chain",
+            "target_shares": 5,
+            "violations": [{"left": "↑ 170,000", "right": "↑ 180,000", "magnitude": 0.001}],
+            "markets": [
+                {"label": "↑ 170,000", "asset_id": "left", "buy_price": 0.011, "sell_price": 0.010},
+                {"label": "↑ 180,000", "asset_id": "right", "buy_price": 0.013, "sell_price": 0.012},
+            ],
+        }
+        fee_terms = {
+            "left": {"known": True, "enabled": True, "rate": 0.07, "exponent": 1},
+            "right": {"known": True, "enabled": True, "rate": 0.07, "exponent": 1},
+        }
+        opportunity = _estimate_violation_trades(snapshot_family, fee_terms)[0]
+        self.assertAlmostEqual(opportunity["gross_profit"], 0.005)
+        self.assertLess(opportunity["net_profit"], 0)
+        self.assertEqual(opportunity["verdict"], "Not profitable after estimated taker fees")
+        self.assertEqual([leg["side"] for leg in opportunity["legs"]], ["buy", "sell"])
+
+    def test_zero_fee_event_preserves_gross_profit_as_net_profit(self):
+        snapshot_family = {
+            "type": "deadline_nesting",
+            "target_shares": 10,
+            "violations": [{"left": "Sooner", "right": "Later", "magnitude": 0.02}],
+            "markets": [
+                {"label": "Sooner", "asset_id": "soon", "buy_price": 0.52, "sell_price": 0.50},
+                {"label": "Later", "asset_id": "late", "buy_price": 0.49, "sell_price": 0.47},
+            ],
+        }
+        no_fees = {
+            "soon": {"known": True, "enabled": False, "rate": 0, "exponent": 1},
+            "late": {"known": True, "enabled": False, "rate": 0, "exponent": 1},
+        }
+        opportunity = _estimate_violation_trades(snapshot_family, no_fees)[0]
+        self.assertAlmostEqual(opportunity["gross_profit"], 0.20)
+        self.assertAlmostEqual(opportunity["net_profit"], 0.20)
+        self.assertEqual(opportunity["verdict"], "Positive after estimated taker fees")
+
     def test_polymarket_event_url_uses_the_discovered_event_slug(self):
         family = {"source": {"event_slug": "fed decision / october"}}
         self.assertEqual(
