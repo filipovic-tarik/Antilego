@@ -4,6 +4,34 @@ const money = (value) => value === null || value === undefined ? "Unavailable" :
 const percent = (value, digits = 2) => `${(Number(value) * 100).toFixed(digits)}%`;
 const time = (value) => new Date(value).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" });
 const escapeHtml = (value) => String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;");
+const titleCase = (value) => String(value || "unknown").replaceAll("_", " ").replace(/\b\w/g, (character) => character.toUpperCase());
+
+function describeViolation(law, opportunity) {
+  const legs = opportunity.legs || [];
+  const buy = legs.find((leg) => leg.side === "buy");
+  const sell = legs.find((leg) => leg.side === "sell");
+  const difference = `${(Number(opportunity.magnitude) * 100).toFixed(2)} percentage points`;
+  if (law === "threshold_chain" && buy && sell) {
+    return `The harder threshold ${sell.label} can be sold at ${percent(sell.price)}, above the ${percent(buy.price)} price to buy the easier threshold ${buy.label}. The required probability order is reversed by ${difference}.`;
+  }
+  if (law === "survival_deadline_nesting" && buy && sell) {
+    return `The later deadline ${sell.label} can be sold at ${percent(sell.price)}, above the ${percent(buy.price)} price to buy the earlier deadline ${buy.label}. The deadline probabilities are reversed by ${difference}.`;
+  }
+  if (law === "deadline_nesting" && buy && sell) {
+    return `The earlier deadline ${sell.label} can be sold at ${percent(sell.price)}, above the ${percent(buy.price)} price to buy the later deadline ${buy.label}. The deadline probabilities are reversed by ${difference}.`;
+  }
+  if (law === "logical_implication" && buy && sell) {
+    return `${sell.label} can be sold at ${percent(sell.price)}, above the ${percent(buy.price)} price to buy the event it logically implies, ${buy.label}. The implication order is reversed by ${difference}.`;
+  }
+  const total = legs.reduce((sum, leg) => sum + Number(leg.price || 0), 0);
+  if (legs.length && legs.every((leg) => leg.side === "buy")) {
+    return `Every outcome can be bought for a combined ${percent(total)}, which is ${difference} below the 100% consistency level at executable prices.`;
+  }
+  if (legs.length && legs.every((leg) => leg.side === "sell")) {
+    return `The outcomes can be sold for a combined ${percent(total)}, which is ${difference} above the 100% consistency boundary at executable prices.`;
+  }
+  return `The current executable prices violate the required probability relationship by ${difference}.`;
+}
 
 function drawChart(family, highlightedLabels) {
   const canvas = $("#analysis-chart");
@@ -82,6 +110,8 @@ function render(payload) {
   $("#title").textContent = payload.name;
   $("#subtitle").textContent = `Latest executable violation at ${new Date(payload.timestamp).toLocaleString()}. The enlarged chart emphasizes the contracts used in the best fee-adjusted estimate.`;
   $("#chart-title").textContent = opportunity.summary;
+  $("#violation-name").textContent = `${titleCase(payload.law)} violation`;
+  $("#violation-description").textContent = describeViolation(payload.law, opportunity);
   $("#verdict").textContent = opportunity.verdict;
   $("#gross").textContent = money(opportunity.gross_profit);
   $("#fees").textContent = money(opportunity.estimated_fees);
@@ -91,7 +121,7 @@ function render(payload) {
   $("#execution-note").textContent = opportunity.inventory_required ? "At least one sell leg is present. The estimate assumes you already hold that position or can construct an equivalent position; it is not starting-flat proof of arbitrage." : "All listed legs are buys at current executable asks.";
   $("#fee-note").textContent = payload.fee_error ? `The current fee schedule could not be retrieved: ${payload.fee_error}` : "Fees use the event's current Polymarket taker-fee schedule. Maker fills may cost less, but are not guaranteed to execute.";
   $("#legs").innerHTML = opportunity.legs.map((leg) => `<div class="leg"><strong class="side ${leg.side}">${leg.side.toUpperCase()}</strong><strong>${escapeHtml(leg.label)}</strong><span>Price<strong>${percent(leg.price)}</strong></span><span>Notional<strong>${money(leg.notional)}</strong></span><span>Est. fee<strong>${money(leg.fee)}</strong></span></div>`).join("");
-  $("#legend").innerHTML = (payload.chart.market_series || []).map((series, index) => `<span style="color:${palette[index % palette.length]};opacity:${highlighted.has(series.label) ? 1 : .35}"><i></i>${escapeHtml(series.label)} <strong>${series.points?.at(-1)?.value == null ? "-" : percent(series.points.at(-1).value, 1)}</strong></span>`).join("");
+  $("#legend").innerHTML = (payload.chart.market_series || []).map((series, index) => `<span class="series-${index % palette.length} ${highlighted.has(series.label) ? "" : "muted"}"><i></i>${escapeHtml(series.label)} <strong>${series.points?.at(-1)?.value == null ? "-" : percent(series.points.at(-1).value, 1)}</strong></span>`).join("");
   if (payload.polymarket_url) $("#polymarket-link").href = payload.polymarket_url;
   else $("#polymarket-link").hidden = true;
   $("#report").hidden = false;

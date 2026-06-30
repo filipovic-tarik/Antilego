@@ -16,6 +16,20 @@ h2 { margin: 0; font-size: 1.25rem; font-weight: 520; }
 .legend { display: flex; flex-wrap: wrap; gap: 10px 22px; margin-top: 22px; }
 .legend span { font-size: .73rem; }
 .legend i { display: inline-block; width: 18px; height: 2px; margin: 0 7px 3px 0; background: currentColor; }
+.legend .series-0 { color: #f2f2f2; }
+.legend .series-1 { color: #7aa2d6; }
+.legend .series-2 { color: #d9a65a; }
+.legend .series-3 { color: #83b99a; }
+.legend .series-4 { color: #b49ac8; }
+.legend .series-5 { color: #d47f7f; }
+.legend .series-6 { color: #76b9c7; }
+.legend .series-7 { color: #b7af72; }
+.legend .series-8 { color: #9d9d9d; }
+.legend .series-9 { color: #c28ca6; }
+.legend .muted { opacity: .35; }
+.violation-explanation { margin-top: 22px; padding: 22px 0 2px; border-top: 1px solid var(--line); }
+.violation-explanation h3 { margin: 0; font-size: 1rem; font-weight: 560; }
+.violation-explanation p:last-child { max-width: 920px; margin: 10px 0 0; color: var(--muted); font-size: .85rem; line-height: 1.6; }
 .analysis-grid { display: grid; grid-template-columns: .92fr 1.08fr; gap: 14px; margin-top: 14px; }
 .verdict-panel, .legs-panel { padding: 28px; }
 .figures { display: grid; grid-template-columns: repeat(3, 1fr); margin-top: 28px; border: 1px solid var(--line); }

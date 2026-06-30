@@ -209,8 +209,8 @@ input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 2px r
 .chart-legend b { margin-left: 3px; color: inherit; font-weight: 600; }
 .chart-alert { margin: 9px 0 0; color: #ffacac; font-size: .63rem; line-height: 1.4; }
 .chart-actions { display: flex !important; justify-content: flex-end !important; margin-top: 12px; padding-top: 11px; border-top: 1px solid rgba(255,255,255,.09); }
-.analyze-button { display: inline-flex; gap: 18px; align-items: center; padding: 9px 13px; border: 1px solid rgba(237,106,106,.5); color: #ffacac; font-size: .65rem; letter-spacing: .1em; text-decoration: none; text-transform: uppercase; transition: border-color .18s ease, color .18s ease, background .18s ease; }
-.analyze-button:hover, .analyze-button:focus-visible { border-color: #ffacac; color: #fff; background: rgba(237,106,106,.09); outline: none; }
+.analyze-button { display: inline-flex; gap: 18px; align-items: center; padding: 9px 13px; border: 1px solid #fff; color: #050505; background: #fff; font-size: .65rem; font-weight: 650; letter-spacing: .1em; text-decoration: none; text-transform: uppercase; transition: background .18s ease; }
+.analyze-button:hover, .analyze-button:focus-visible { color: #050505; background: #d9d9d9; outline: none; }
 
 .explanation { display: grid; grid-template-columns: .55fr 1.1fr 1fr; gap: 60px; padding: 110px 0; }
 .explanation h2 { max-width: 480px; font-size: clamp(2.5rem, 4vw, 4.2rem); font-weight: 500; line-height: 1; letter-spacing: -.035em; }
