@@ -190,6 +190,7 @@ def classify_relationship(
         "model": model,
         "instructions": SYSTEM_INSTRUCTIONS,
         "input": json.dumps({"contracts": contracts}, ensure_ascii=False),
+        "reasoning": {"effort": "low"},
         "text": {
             "format": {
                 "type": "json_schema",

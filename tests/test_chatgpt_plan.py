@@ -139,6 +139,51 @@ class ChatGPTPlanTests(unittest.TestCase):
         self.assertFalse(captured["payload"]["store"])
         self.assertTrue(captured["payload"]["stream"])
 
+    def test_plan_transport_retries_transient_timeout(self):
+        chatgpt_plan._atomic_private_json(
+            chatgpt_plan.PROFILE_PATH,
+            {
+                "client_id": "client",
+                "access_token": "access",
+                "refresh_token": "refresh",
+                "expires_at": time.time() + 3600,
+                "scopes": ["chatgpt.tokens.use.direct"],
+                "model": "gpt-6.1-sol",
+            },
+        )
+        calls = 0
+
+        class FakeResponse(io.BytesIO):
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+        def fake_urlopen(_request, timeout):
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                raise TimeoutError("temporary timeout")
+            complete = {
+                "type": "response.completed",
+                "response": {"id": "resp_retry", "output": []},
+            }
+            return FakeResponse(
+                b'data: {"type":"response.output_text.delta","delta":"{}"}\n\n'
+                + f"data: {json.dumps(complete)}\n\n".encode()
+            )
+
+        session = ChatGPTPlanSession()
+        with (
+            patch.object(chatgpt_plan.urllib.request, "urlopen", fake_urlopen),
+            patch.object(chatgpt_plan.time, "sleep"),
+        ):
+            result = session.response_transport({"input": "classify"}, "unused")
+
+        self.assertEqual(result["id"], "resp_retry")
+        self.assertEqual(calls, 2)
+
 
 if __name__ == "__main__":
     unittest.main()
