@@ -9,7 +9,8 @@ import os
 import unittest
 import urllib.request
 
-from antilego.market_tracking import collect_snapshot
+from antilego.market_discovery import discover_active_market_groups
+from antilego.market_tracking import collect_snapshot, fetch_midpoint
 
 
 @unittest.skipUnless(os.environ.get("ANTILEGO_LIVE_TEST") == "1", "live test disabled")
@@ -35,6 +36,21 @@ class LivePolymarketTests(unittest.TestCase):
         self.assertIsNotNone(midpoint)
         self.assertGreaterEqual(midpoint, 0.0)
         self.assertLessEqual(midpoint, 1.0)
+
+    def test_discovers_current_tradable_contract_group(self):
+        groups = discover_active_market_groups(
+            limit=1,
+            page_size=25,
+            max_pages=4,
+        )
+        self.assertEqual(len(groups), 1)
+        self.assertGreaterEqual(len(groups[0]["contracts"]), 2)
+        self.assertTrue(all(contract["asset_id"] for contract in groups[0]["contracts"]))
+        prices = [
+            fetch_midpoint(contract["asset_id"])
+            for contract in groups[0]["contracts"][:5]
+        ]
+        self.assertTrue(any(price is not None for price in prices))
 
 
 if __name__ == "__main__":
