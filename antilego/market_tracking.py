@@ -74,22 +74,31 @@ def run_collection(
     output_path: Path | None = None,
     interval_minutes: float = 0,
     count: int = 1,
+    families: Iterable[dict] | None = None,
+    fetcher: PriceFetcher = fetch_midpoint,
+    sleeper: Callable[[float], None] = time.sleep,
 ) -> list[dict]:
     """Collect one or more snapshots; ``count=0`` continues until interrupted."""
+    if interval_minutes < 0 or count < 0:
+        raise ValueError("interval_minutes and count cannot be negative")
     ensure_output_directories()
     output_path = Path(output_path) if output_path is not None else live_snapshot_path()
+    families = FAMILIES if families is None else list(families)
     collected = []
     iteration = 0
     while count == 0 or iteration < count:
-        snapshot = collect_snapshot()
+        snapshot = collect_snapshot(families, fetcher)
         append_snapshot(snapshot, output_path)
-        collected.append(snapshot)
+        if count == 0:
+            collected[:] = [snapshot]
+        else:
+            collected.append(snapshot)
         iteration += 1
         if count != 0 and iteration >= count:
             break
         if interval_minutes <= 0:
             break
-        time.sleep(interval_minutes * 60)
+        sleeper(interval_minutes * 60)
     return collected
 
 

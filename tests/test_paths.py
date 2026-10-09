@@ -1,7 +1,11 @@
 import unittest
 from datetime import date
 
-from antilego.paths import live_snapshot_path, weekly_archive_dir
+from antilego.paths import (
+    DEFAULT_MONITORING_REGISTRY,
+    live_snapshot_path,
+    weekly_archive_dir,
+)
 
 
 class WeeklyArchivePathTests(unittest.TestCase):
@@ -16,6 +20,12 @@ class WeeklyArchivePathTests(unittest.TestCase):
     def test_live_data_is_inside_week_folder(self):
         path = live_snapshot_path(date(2026, 8, 7))
         self.assertEqual(path.parts[-3:], ("2026-08-03", "market_data", "snapshots.jsonl"))
+
+    def test_monitoring_registry_is_outside_weekly_archives(self):
+        self.assertEqual(
+            DEFAULT_MONITORING_REGISTRY.parts[-2:],
+            ("monitoring", "monitored_families.json"),
+        )
 
 
 if __name__ == "__main__":

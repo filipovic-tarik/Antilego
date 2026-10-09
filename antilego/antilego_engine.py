@@ -10,7 +10,12 @@ from pathlib import Path
 from .contradiction_brain import analyze_snapshots, load_snapshots
 from .market_discovery import discovery_report, write_discovery_report
 from .market_tracking import run_collection
-from .paths import DEFAULT_SNAPSHOT_PATH, live_snapshot_path
+from .monitoring_registry import load_monitored_families, register_classified_events
+from .paths import (
+    DEFAULT_MONITORING_REGISTRY,
+    DEFAULT_SNAPSHOT_PATH,
+    live_snapshot_path,
+)
 from .relationship_intelligence import classify_relationship
 
 
@@ -34,6 +39,17 @@ def main() -> None:
     analyze.add_argument("--input", type=Path, default=DEFAULT_SNAPSHOT_PATH)
     collect = subparsers.add_parser("collect", help="collect public live prices")
     collect.add_argument("--output", type=Path)
+    monitor = subparsers.add_parser(
+        "monitor", help="snapshot approved discovered families every five minutes"
+    )
+    monitor.add_argument("--interval-minutes", type=float, default=5)
+    monitor.add_argument(
+        "--count", type=int, default=0, help="snapshots to collect; zero runs continuously"
+    )
+    monitor.add_argument("--output", type=Path)
+    monitor.add_argument(
+        "--monitoring-file", type=Path, default=DEFAULT_MONITORING_REGISTRY
+    )
     classify = subparsers.add_parser(
         "classify", help="classify the relationship among supplied contracts"
     )
@@ -60,12 +76,50 @@ def main() -> None:
         help="classify each discovered group with the configured OpenAI model",
     )
     discover.add_argument("--model", help="OpenAI model override for --classify")
+    discover.add_argument(
+        "--add-to-monitoring",
+        action="store_true",
+        help="persist approved classifications for the monitor command",
+    )
+    discover.add_argument(
+        "--minimum-confidence",
+        type=float,
+        default=0.8,
+        help="minimum confidence for automatic monitoring registration",
+    )
+    discover.add_argument(
+        "--monitoring-file", type=Path, default=DEFAULT_MONITORING_REGISTRY
+    )
     args = parser.parse_args()
 
     if args.command == "collect":
         run_collection(args.output)
         output_path = args.output if args.output is not None else live_snapshot_path()
         print(f"Saved one live snapshot to {output_path.resolve()}")
+        return
+
+    if args.command == "monitor":
+        families = load_monitored_families(args.monitoring_file)
+        if not families:
+            parser.error(
+                "No approved families are registered. Run discover with "
+                "--classify --add-to-monitoring first."
+            )
+        output_path = args.output if args.output is not None else live_snapshot_path()
+        print(
+            f"Monitoring {len(families)} family/families every "
+            f"{args.interval_minutes:g} minute(s). Press Ctrl+C to stop."
+        )
+        try:
+            run_collection(
+                output_path=args.output,
+                interval_minutes=args.interval_minutes,
+                count=args.count,
+                families=families,
+            )
+        except KeyboardInterrupt:
+            print("Monitoring stopped.")
+        print(f"Snapshots saved to {output_path.resolve()}")
         return
 
     if args.command == "classify":
@@ -78,6 +132,8 @@ def main() -> None:
         return
 
     if args.command == "discover":
+        if args.add_to_monitoring and not args.classify:
+            parser.error("--add-to-monitoring requires --classify")
         report = discovery_report(
             limit=args.limit,
             min_contracts=args.min_contracts,
@@ -89,6 +145,12 @@ def main() -> None:
             for event in report["events"]:
                 result = classify_relationship(event["contracts"], model=args.model)
                 event["classification"] = result.to_dict()
+        if args.add_to_monitoring:
+            report["monitoring"] = register_classified_events(
+                report["events"],
+                registry_path=args.monitoring_file,
+                minimum_confidence=args.minimum_confidence,
+            )
         if args.output is not None:
             output_path = write_discovery_report(report, args.output)
             print(f"Discovered {report['candidate_count']} active group(s)")

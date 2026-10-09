@@ -6,6 +6,8 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 ARCHIVE_DIR = PROJECT_ROOT / "archive"
+MONITORING_DIR = PROJECT_ROOT / "monitoring"
+DEFAULT_MONITORING_REGISTRY = MONITORING_DIR / "monitored_families.json"
 
 
 def week_bounds(value: date | datetime | None = None) -> tuple[date, date]:
