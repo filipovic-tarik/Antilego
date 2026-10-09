@@ -17,4 +17,12 @@ if [[ ! -x "$PYTHON" ]]; then
 fi
 
 cd "$PROJECT_ROOT" || exit 1
-exec "$PYTHON" -m antilego.dashboard
+
+# Detach the dashboard server so the launcher itself exits immediately. This
+# lets macOS launch the icon again later; a second launch simply brings the
+# existing localhost dashboard back to the front.
+LOG_DIR="$PROJECT_ROOT/.antilego"
+mkdir -p "$LOG_DIR"
+nohup "$PYTHON" -m antilego.dashboard \
+  >> "$LOG_DIR/dashboard.log" 2>&1 < /dev/null &
+exit 0
