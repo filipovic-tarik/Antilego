@@ -1,0 +1,20 @@
+#!/bin/zsh
+
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+PROJECT_ROOT="$(CDPATH= cd -- "$SCRIPT_DIR/../../.." && pwd)"
+
+# A Desktop copy of the app lives outside the repository, so fall back to the
+# local Antilego checkout when the bundle is not sitting beside the source.
+if [[ ! -d "$PROJECT_ROOT/antilego" ]]; then
+  PROJECT_ROOT="/Users/tarikfilipovic/Documents/Antilego"
+fi
+
+PYTHON="$PROJECT_ROOT/.venv/bin/python"
+
+if [[ ! -x "$PYTHON" ]]; then
+  osascript -e 'display alert "Antilego needs its local environment" message "Open the Antilego project once in Codex to finish setup." as critical'
+  exit 1
+fi
+
+cd "$PROJECT_ROOT" || exit 1
+exec "$PYTHON" -m antilego.dashboard
