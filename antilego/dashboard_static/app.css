@@ -76,8 +76,13 @@ h1 { max-width: 850px; margin-bottom: 28px; font-size: clamp(3.9rem, 7vw, 7rem);
 .field small { color: #718078; font-size: .7rem; }
 input, select { width: 100%; min-height: 45px; padding: 0 13px; border: 1px solid var(--line); border-radius: 0; outline: 0; color: var(--text); background: rgba(3, 10, 7, .65); }
 input:focus, select:focus { border-color: var(--green); box-shadow: 0 0 0 2px rgba(66, 220, 143, .1); }
-.input-action { display: grid; grid-template-columns: 1fr auto; }
-.input-action input { border-right: 0; }
+.account-connect { display: grid; grid-template-columns: 1fr auto; gap: 28px; align-items: center; padding: 18px; border: 1px solid var(--line); background: rgba(3, 10, 7, .42); }
+.account-copy > span { display: block; margin-bottom: 8px; color: var(--muted); font-size: .66rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+.account-copy strong { display: block; margin-bottom: 7px; font-size: 1.05rem; }
+.account-copy p { max-width: 550px; margin: 0 0 8px; color: var(--muted); font-size: .78rem; line-height: 1.55; }
+.account-copy small { color: #718078; font-size: .68rem; }
+.account-actions { display: grid; min-width: 195px; gap: 8px; }
+.account-button { justify-content: center !important; }
 .settings-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 25px; }
 .primary-actions { display: grid; grid-template-columns: 1fr 1fr .8fr; gap: 10px; margin-top: 28px; }
 .button { min-height: 45px; padding: 0 16px; border: 1px solid var(--line); color: var(--text); background: transparent; font-size: .78rem; font-weight: 700; }
@@ -101,6 +106,9 @@ input:focus, select:focus { border-color: var(--green); box-shadow: 0 0 0 2px rg
 .is-running .activity-orbit { animation: rotate 8s linear infinite; }
 @keyframes rotate { to { transform: rotate(360deg); } }
 .activity-message { min-height: 42px; margin-bottom: 16px; color: var(--muted); font-size: .82rem; line-height: 1.55; }
+.has-error .activity-message { color: #ffb6b6; }
+.has-error .activity-panel { border-color: rgba(237, 106, 106, .45); }
+.has-error .progress-track i { background: var(--red); }
 .progress-track { height: 2px; overflow: hidden; background: rgba(255,255,255,.08); }
 .progress-track i { display: block; width: 0; height: 100%; background: var(--green); transition: width .35s ease; }
 .activity-details { display: grid; gap: 9px; margin: 22px 0 0; }
@@ -145,7 +153,8 @@ footer { display: flex; justify-content: space-between; width: min(1240px, calc(
   .metrics article:nth-child(2) { border-right: 0; }
   .metrics article:nth-child(-n+2) { border-bottom: 1px solid var(--line); }
   .workspace-grid { grid-template-columns: 1fr; }
-  .settings-row, .primary-actions, .graph-grid { grid-template-columns: 1fr; }
+  .settings-row, .primary-actions, .graph-grid, .account-connect { grid-template-columns: 1fr; }
+  .account-actions { min-width: 0; }
   .market-row { grid-template-columns: 1.6fr 1fr .6fr; }
   .market-row > :nth-child(3), .market-row > :nth-child(4) { display: none; }
   .explanation { grid-template-columns: 1fr; gap: 25px; }
@@ -158,8 +167,6 @@ footer { display: flex; justify-content: space-between; width: min(1240px, calc(
   .metrics { grid-template-columns: 1fr; }
   .metrics article { border-right: 0; border-bottom: 1px solid var(--line); }
   .controls-panel, .activity-panel, .markets-panel, .reports-panel { padding: 20px; }
-  .input-action { grid-template-columns: 1fr; gap: 8px; }
-  .input-action input { border-right: 1px solid var(--line); }
   .panel-heading { align-items: flex-start; flex-direction: column; }
   .market-row { grid-template-columns: 1fr .55fr; }
   .market-row > :nth-child(2) { display: none; }

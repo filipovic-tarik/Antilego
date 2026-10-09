@@ -9,11 +9,15 @@ from antilego.dashboard import DashboardServer
 
 class StubState:
     def __init__(self):
-        self.api_key = None
+        self.connected = False
 
     def status(self):
         return {
-            "api_key_configured": bool(self.api_key),
+            "chatgpt": {
+                "connected": self.connected,
+                "email": None,
+                "message": "Connected" if self.connected else "Not connected",
+            },
             "monitor": {"state": "stopped"},
             "discovery": {"state": "idle"},
             "graphs": {"state": "idle", "items": []},
@@ -21,8 +25,9 @@ class StubState:
             "family_count": 0,
         }
 
-    def set_openai_key(self, value):
-        self.api_key = value
+    def begin_chatgpt_connection(self, redirect_uri):
+        self.redirect_uri = redirect_uri
+        return "https://auth.openai.com/example"
 
 
 class DashboardHTTPTests(unittest.TestCase):
@@ -48,10 +53,10 @@ class DashboardHTTPTests(unittest.TestCase):
         self.assertEqual(status["family_count"], 0)
         self.assertEqual(status["csrf_token"], self.server.csrf_token)
 
-    def test_settings_require_the_local_csrf_token(self):
-        body = json.dumps({"api_key": "session-only-key"}).encode("utf-8")
+    def test_chatgpt_connection_requires_the_local_csrf_token(self):
+        body = b"{}"
         rejected = Request(
-            f"{self.base_url}/api/settings",
+            f"{self.base_url}/api/chatgpt/connect",
             data=body,
             headers={"Content-Type": "application/json"},
             method="POST",
@@ -61,7 +66,7 @@ class DashboardHTTPTests(unittest.TestCase):
         self.assertEqual(caught.exception.code, 403)
 
         accepted = Request(
-            f"{self.base_url}/api/settings",
+            f"{self.base_url}/api/chatgpt/connect",
             data=body,
             headers={
                 "Content-Type": "application/json",
@@ -72,7 +77,11 @@ class DashboardHTTPTests(unittest.TestCase):
         with urlopen(accepted, timeout=2) as response:
             payload = json.load(response)
         self.assertTrue(payload["ok"])
-        self.assertEqual(self.state.api_key, "session-only-key")
+        self.assertEqual(payload["authorization_url"], "https://auth.openai.com/example")
+        self.assertEqual(
+            self.state.redirect_uri,
+            f"{self.base_url}/auth/callback",
+        )
 
 
 if __name__ == "__main__":

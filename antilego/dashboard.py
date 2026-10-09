@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import html
 import json
 import mimetypes
 import secrets
@@ -15,6 +16,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
 
+from .chatgpt_plan import ChatGPTPlanSession
 from .market_discovery import discovery_report, write_discovery_report
 from .market_tracking import append_snapshot, collect_snapshot
 from .monitoring_registry import load_monitored_families, register_classified_events
@@ -51,7 +53,7 @@ class DashboardState:
 
     def __init__(self) -> None:
         self.lock = threading.RLock()
-        self.openai_key: str | None = None
+        self.chatgpt = ChatGPTPlanSession()
         self.monitor_stop = threading.Event()
         self.monitor_thread: threading.Thread | None = None
         self.discovery_thread: threading.Thread | None = None
@@ -71,12 +73,24 @@ class DashboardState:
             "message": "Generate graphs after collecting complete snapshots.",
         }
 
-    def set_openai_key(self, value: str) -> None:
-        value = value.strip()
-        if not value:
-            raise ValueError("Enter an OpenAI API key first.")
+    def begin_chatgpt_connection(self, redirect_uri: str) -> str:
         with self.lock:
-            self.openai_key = value
+            return self.chatgpt.begin_authorization(redirect_uri)
+
+    def complete_chatgpt_connection(self, query: dict[str, list[str]]) -> None:
+        try:
+            with self.lock:
+                self.chatgpt.complete_authorization(query)
+        except Exception as error:
+            with self.lock:
+                self.chatgpt.last_error = str(error)
+            raise
+
+    def disconnect_chatgpt(self) -> None:
+        with self.lock:
+            if self.discovery_thread and self.discovery_thread.is_alive():
+                raise ValueError("Wait for market discovery to finish before disconnecting.")
+            self.chatgpt.disconnect()
 
     def start_discovery(self, limit: int, minimum_confidence: float) -> None:
         if not 1 <= limit <= 50:
@@ -84,20 +98,19 @@ class DashboardState:
         if not 0 <= minimum_confidence <= 1:
             raise ValueError("Minimum confidence must be between 0 and 1.")
         with self.lock:
-            if not self.openai_key:
-                raise ValueError("Save your OpenAI API key before discovering markets.")
+            if not self.chatgpt.connected:
+                raise ValueError("Connect your ChatGPT plan before discovering markets.")
             if self.discovery_thread and self.discovery_thread.is_alive():
                 raise ValueError("Market discovery is already running.")
-            api_key = self.openai_key
             self.discovery = {
                 "state": "running",
-                "message": "Finding active Polymarket event groups...",
+                "message": "Finding active Polymarket event groups for plan-backed review...",
                 "processed": 0,
                 "total": 0,
             }
             self.discovery_thread = threading.Thread(
                 target=self._run_discovery,
-                args=(limit, minimum_confidence, api_key),
+                args=(limit, minimum_confidence),
                 daemon=True,
                 name="antilego-discovery",
             )
@@ -107,7 +120,6 @@ class DashboardState:
         self,
         limit: int,
         minimum_confidence: float,
-        api_key: str,
     ) -> None:
         try:
             report = discovery_report(limit=limit)
@@ -116,9 +128,13 @@ class DashboardState:
                 self.discovery.update(
                     total=len(events),
                     message=f"Classifying {len(events)} active event group(s)...",
-                )
+            )
             for index, event in enumerate(events, start=1):
-                result = classify_relationship(event["contracts"], api_key=api_key)
+                result = classify_relationship(
+                    event["contracts"],
+                    api_key="chatgpt-plan",
+                    transport=self.chatgpt.response_transport,
+                )
                 event["classification"] = result.to_dict()
                 with self.lock:
                     self.discovery.update(
@@ -293,7 +309,7 @@ class DashboardState:
             )
         with self.lock:
             return {
-                "api_key_configured": bool(self.openai_key),
+                "chatgpt": self.chatgpt.status(),
                 "monitor": {
                     "state": self.monitor_state,
                     "message": self.monitor_message,
@@ -321,6 +337,7 @@ class DashboardServer(ThreadingHTTPServer):
         super().__init__(address, DashboardHandler)
         self.state = state
         self.csrf_token = secrets.token_urlsafe(24)
+        self.base_url = f"http://{self.server_address[0]}:{self.server_address[1]}"
 
 
 class DashboardHandler(BaseHTTPRequestHandler):
@@ -358,6 +375,27 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _send_html(self, title: str, message: str, *, success: bool) -> None:
+        color = "#42dc8f" if success else "#ed6a6a"
+        body = f"""<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width">
+<title>{html.escape(title)}</title>
+<body style="margin:0;background:#07100d;color:#edf5f0;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif">
+<main style="max-width:680px;margin:14vh auto;padding:32px;border:1px solid rgba(214,238,225,.18)">
+<p style="color:{color};letter-spacing:.16em;text-transform:uppercase">Antilego / ChatGPT</p>
+<h1 style="font-size:clamp(2.5rem,7vw,5rem);line-height:.92">{html.escape(title)}</h1>
+<p style="color:#93a49b;font-size:1.05rem;line-height:1.7">{html.escape(message)}</p>
+<a href="/" style="display:inline-block;margin-top:24px;padding:14px 18px;color:#07100d;background:{color};text-decoration:none;font-weight:700">Return to Antilego</a>
+</main></body></html>""".encode("utf-8")
+        self.send_response(200 if success else 400)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'")
+        self.end_headers()
+        self.wfile.write(body)
+
     def _read_json(self) -> dict:
         try:
             length = int(self.headers.get("Content-Length", "0"))
@@ -386,6 +424,19 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
+        if parsed.path == "/auth/callback":
+            from urllib.parse import parse_qs
+
+            try:
+                self.server.state.complete_chatgpt_connection(parse_qs(parsed.query))
+                self._send_html(
+                    "ChatGPT connected",
+                    "Your plan can now power Antilego's market-relationship analysis. The credential is protected locally on this Mac.",
+                    success=True,
+                )
+            except Exception as error:
+                self._send_html("Connection failed", str(error), success=False)
+            return
         if parsed.path == "/api/status":
             payload = self.server.state.status()
             payload["csrf_token"] = self.server.csrf_token
@@ -420,8 +471,14 @@ class DashboardHandler(BaseHTTPRequestHandler):
         try:
             payload = self._read_json()
             path = urlparse(self.path).path
-            if path == "/api/settings":
-                self.server.state.set_openai_key(str(payload.get("api_key", "")))
+            if path == "/api/chatgpt/connect":
+                authorization_url = self.server.state.begin_chatgpt_connection(
+                    f"{self.server.base_url}/auth/callback"
+                )
+                self._send_json({"ok": True, "authorization_url": authorization_url})
+                return
+            elif path == "/api/chatgpt/disconnect":
+                self.server.state.disconnect_chatgpt()
             elif path == "/api/discover":
                 self.server.state.start_discovery(
                     int(payload.get("limit", 10)),
