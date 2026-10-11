@@ -56,6 +56,20 @@ class ContradictionBrainTests(unittest.TestCase):
         self.assertFalse(result["coherent"])
         self.assertAlmostEqual(result["sum"], 0.9)
 
+    def test_exhaustive_outcomes_use_three_percent_tolerance(self):
+        for total, expected in ((0.97, True), (1.03, True), (0.969, False), (1.031, False)):
+            with self.subTest(total=total):
+                result = evaluate_family(
+                    {
+                        "type": "exhaustive_outcomes",
+                        "markets": [
+                            {"label": "A", "price": total / 2},
+                            {"label": "B", "price": total / 2},
+                        ],
+                    }
+                )
+                self.assertEqual(result["coherent"], expected)
+
     def test_complements_must_sum_to_one(self):
         result = evaluate_family(
             {

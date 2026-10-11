@@ -11,6 +11,7 @@ from antilego.dashboard import (
     DEFAULT_SNAPSHOT_INTERVAL_MINUTES,
     DashboardServer,
     DashboardState,
+    _next_cadence_start,
     _snapshot_history,
 )
 
@@ -93,8 +94,12 @@ class DashboardHTTPTests(unittest.TestCase):
 
 
 class DashboardStateTests(unittest.TestCase):
-    def test_default_snapshot_interval_is_two_minutes(self):
-        self.assertEqual(DEFAULT_SNAPSHOT_INTERVAL_MINUTES, 2.0)
+    def test_default_snapshot_interval_is_three_minutes(self):
+        self.assertEqual(DEFAULT_SNAPSHOT_INTERVAL_MINUTES, 3.0)
+
+    def test_fixed_cadence_accounts_for_collection_time(self):
+        self.assertEqual(_next_cadence_start(100.0, 180.0, 156.0), 280.0)
+        self.assertEqual(_next_cadence_start(100.0, 180.0, 301.0), 460.0)
 
     def test_empty_selection_does_not_approve_everything(self):
         state = DashboardState()
@@ -121,6 +126,26 @@ class DashboardStateTests(unittest.TestCase):
         self.assertFalse(points[0]["violating"])
         self.assertTrue(points[1]["violating"])
         self.assertEqual(points[1]["magnitude"], 0.04)
+        self.assertEqual(points[1]["value"], 0.04)
+
+    def test_sum_history_uses_percentage_value_and_one_hundred_percent_ideal(self):
+        record = {
+            "timestamp": "2026-10-11T10:00:00+00:00",
+            "families": [{
+                "name": "League winner",
+                "type": "exhaustive_outcomes",
+                "coherent": True,
+                "sum": 1.02,
+                "violations": [],
+            }],
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "snapshots.jsonl"
+            path.write_text(json.dumps(record), encoding="utf-8")
+            family = _snapshot_history(path)["families"][0]
+        self.assertEqual(family["ideal_value"], 1.0)
+        self.assertEqual(family["points"][0]["value"], 1.02)
+        self.assertEqual(family["metric_label"], "combined probability")
 
     @patch("antilego.dashboard.subprocess.Popen")
     def test_notification_only_fires_when_family_enters_violation(self, popen):

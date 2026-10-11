@@ -3,6 +3,15 @@ let latestStatus = null;
 let toastTimer = null;
 let lastNotificationId = null;
 const selectedEventIds = new Set();
+const lawDescriptions = {
+  deadline_nesting: "For the same outcome, an earlier deadline cannot be more likely than a later deadline.",
+  threshold_chain: "An easier threshold must be at least as likely as every harder threshold after it.",
+  exhaustive_outcomes: "Mutually exclusive outcomes that cover every possibility should total 100%, with a 3% tolerance.",
+  mutually_exclusive: "Exactly one outcome can occur, so the complete outcome set should total 100%, with a 3% tolerance.",
+  complements: "An event and its exact opposite should add to 100%.",
+  non_exhaustive_exclusivity: "Outcomes cannot happen together, so their combined probability cannot exceed 100%.",
+  logical_implication: "If event A guarantees event B, A cannot be priced as more likely than B.",
+};
 
 const $ = (selector) => document.querySelector(selector);
 
@@ -55,7 +64,10 @@ function renderMarkets(families) {
     const signal = family.coherent === false ? `${family.violation_count} found` : "-";
     return `<div class="market-row" role="row">
       <span class="market-name"><strong>${escapeHtml(family.name)}</strong><small>${Math.round((family.confidence || 0) * 100)}% classification confidence</small></span>
-      <span>${escapeHtml(titleCase(family.type))}</span><span>${escapeHtml(family.market_count)}</span>
+      <span class="law-cell" tabindex="0" aria-label="${escapeHtml(lawDescriptions[family.type] || titleCase(family.type))}">
+        <span class="law-name">${escapeHtml(titleCase(family.type))}</span>
+        <span class="law-description">${escapeHtml(lawDescriptions[family.type] || "Probability consistency rule.")}</span>
+      </span><span>${escapeHtml(family.market_count)}</span>
       <span class="status-pill ${statusClass}">${label}</span>
       <span class="signal ${family.coherent === false ? "bad" : ""}">${signal}</span>
     </div>`;
@@ -109,7 +121,8 @@ function drawChart(canvas, family) {
   const plotWidth = Math.max(1, width - pad.left - pad.right);
   const plotHeight = Math.max(1, height - pad.top - pad.bottom);
   const points = family.points || [];
-  const maxValue = Math.max(0.01, ...points.map((point) => Number(point.magnitude) || 0));
+  const idealValue = Number(family.ideal_value) || 0;
+  const maxValue = Math.max(0.01, idealValue, ...points.map((point) => Number(point.value) || 0)) * 1.12;
   const x = (index) => pad.left + (points.length <= 1 ? plotWidth / 2 : index * plotWidth / (points.length - 1));
   const y = (value) => pad.top + plotHeight - ((Number(value) || 0) / maxValue) * plotHeight;
 
@@ -120,6 +133,16 @@ function drawChart(canvas, family) {
     const py = pad.top + row * plotHeight / 3;
     ctx.beginPath(); ctx.moveTo(pad.left, py); ctx.lineTo(width - pad.right, py); ctx.stroke();
   }
+  const idealY = y(idealValue);
+  ctx.save();
+  ctx.setLineDash([6, 5]);
+  ctx.strokeStyle = "rgba(255,255,255,.72)";
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(pad.left, idealY); ctx.lineTo(width - pad.right, idealY); ctx.stroke();
+  ctx.restore();
+  ctx.fillStyle = "rgba(255,255,255,.76)";
+  const idealText = `${(idealValue * 100).toFixed(0)}% ideal`;
+  ctx.fillText(idealText, width - pad.right - ctx.measureText(idealText).width, Math.max(pad.top + 11, idealY - 6));
   points.forEach((point, index) => {
     if (!point.violating) return;
     const start = index === 0 ? pad.left : (x(index - 1) + x(index)) / 2;
@@ -130,10 +153,10 @@ function drawChart(canvas, family) {
   if (points.length) {
     ctx.beginPath();
     points.forEach((point, index) => {
-      if (index === 0) ctx.moveTo(x(index), y(point.magnitude));
-      else ctx.lineTo(x(index), y(point.magnitude));
+      if (index === 0) ctx.moveTo(x(index), y(point.value));
+      else ctx.lineTo(x(index), y(point.value));
     });
-    ctx.strokeStyle = "#42dc8f"; ctx.lineWidth = 2; ctx.stroke();
+    ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 2; ctx.stroke();
   }
   ctx.fillStyle = "#7f9187";
   ctx.fillText(`${(maxValue * 100).toFixed(1)}%`, 4, pad.top + 4);
@@ -160,7 +183,7 @@ function renderLiveCharts(history) {
     const latest = family.points.at(-1) || {};
     return `<article class="live-chart-card">
       <div><strong>${escapeHtml(family.name)}</strong><span class="status-pill ${latest.violating ? "bad" : "good"}">${latest.violating ? "Violation" : "Consistent"}</span></div>
-      <small>${escapeHtml(titleCase(family.law))} · discrepancy magnitude</small>
+      <small>${escapeHtml(titleCase(family.law))} · ${escapeHtml(family.metric_label)} · ${escapeHtml(family.ideal_label)} · latest ${((Number(latest.value) || 0) * 100).toFixed(1)}%</small>
       <canvas data-chart-index="${index}" aria-label="Violation history for ${escapeHtml(family.name)}"></canvas>
     </article>`;
   }).join("");
@@ -245,7 +268,7 @@ $("#connect-chatgpt").addEventListener("click", async () => {
 });
 $("#disconnect-chatgpt").addEventListener("click", () => action("/api/chatgpt/disconnect", {}, "ChatGPT disconnected from Antilego."));
 $("#discover").addEventListener("click", () => action("/api/discover", { limit: Number($("#discovery-limit").value), minimum_confidence: Number($("#confidence").value) }, "Discovery started. Results will wait for your approval."));
-$("#start-monitor").addEventListener("click", () => action("/api/monitor/start", { interval_minutes: Number($("#interval").value) }, "Monitoring started with two-minute snapshots."));
+$("#start-monitor").addEventListener("click", () => action("/api/monitor/start", { interval_minutes: Number($("#interval").value) }, "Monitoring started on a fixed three-minute cadence."));
 $("#stop-monitor").addEventListener("click", () => action("/api/monitor/stop", {}, "Monitoring is stopping."));
 $("#approve-selected").addEventListener("click", async () => {
   if (await action("/api/discovery/approve", { event_ids: [...selectedEventIds] }, "Selected event groups approved.")) selectedEventIds.clear();

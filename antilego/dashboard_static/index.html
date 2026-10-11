@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#07100d" />
+    <meta name="theme-color" content="#050505" />
     <title>Antilego Local</title>
     <link rel="stylesheet" href="/static/app.css" />
     <script src="/static/app.js" defer></script>
@@ -77,10 +77,7 @@
             <label class="field">
               <span>Snapshot interval</span>
               <select id="interval">
-                <option value="2" selected>Every 2 minutes</option>
-                <option value="5">Every 5 minutes</option>
-                <option value="15">Every 15 minutes</option>
-                <option value="30">Every 30 minutes</option>
+                <option value="3" selected>Every 3 minutes</option>
               </select>
             </label>
           </div>
@@ -152,7 +149,7 @@
           <button id="enable-notifications" class="button secondary" type="button">Enable browser alerts</button>
         </div>
         <p id="graphs-message" class="section-note">
-          Charts update after every two-minute snapshot. Red shading marks periods when a probability law is violated.
+          Charts update on a fixed three-minute cadence. Red shading marks periods when a probability law is violated.
         </p>
         <div id="graph-grid" class="graph-grid"></div>
       </section>
