@@ -17,6 +17,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from .chatgpt_plan import ChatGPTPlanSession
+from .contradiction_brain import PROBABILITY_LAWS
 from .market_discovery import discovery_report, write_discovery_report
 from .market_tracking import append_snapshot, collect_snapshot
 from .monitoring_registry import load_monitored_families, register_classified_events
@@ -33,6 +34,9 @@ from .relationship_intelligence import classify_relationship
 STATIC_DIR = Path(__file__).resolve().parent / "dashboard_static"
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8766
+DEFAULT_SNAPSHOT_INTERVAL_MINUTES = 2.0
+AI_DISCOVERY_INTERVAL_HOURS = 1
+HISTORY_LIMIT = 360
 
 
 def _latest_jsonl_record(path: Path) -> dict | None:
@@ -48,6 +52,48 @@ def _latest_jsonl_record(path: Path) -> dict | None:
     return payload if isinstance(payload, dict) else None
 
 
+def _snapshot_history(path: Path, limit: int = HISTORY_LIMIT) -> dict:
+    """Return compact chart data from recent snapshots."""
+    if not path.exists():
+        return {"snapshot_count": 0, "families": []}
+    records = []
+    for line in path.read_text(encoding="utf-8").splitlines()[-limit:]:
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(record, dict):
+            records.append(record)
+    series: dict[str, dict] = {}
+    for record in records:
+        timestamp = record.get("timestamp")
+        for family in record.get("families", []):
+            if not isinstance(family, dict) or not family.get("name"):
+                continue
+            violations = family.get("violations") or []
+            magnitude = max(
+                (
+                    float(item.get("magnitude", 0))
+                    for item in violations
+                    if isinstance(item, dict)
+                ),
+                default=0.0,
+            )
+            item = series.setdefault(
+                family["name"],
+                {"name": family["name"], "law": family.get("type"), "points": []},
+            )
+            item["points"].append(
+                {
+                    "timestamp": timestamp,
+                    "magnitude": magnitude,
+                    "violating": family.get("coherent") is False,
+                    "complete": family.get("data_complete") is not False,
+                }
+            )
+    return {"snapshot_count": len(records), "families": list(series.values())}
+
+
 class DashboardState:
     """Thread-safe orchestration state shared by the local HTTP handlers."""
 
@@ -60,8 +106,16 @@ class DashboardState:
         self.graph_thread: threading.Thread | None = None
         self.monitor_state = "stopped"
         self.monitor_message = "Ready to monitor approved families."
-        self.monitor_interval_minutes = 5.0
+        self.monitor_interval_minutes = DEFAULT_SNAPSHOT_INTERVAL_MINUTES
         self.next_snapshot_at: str | None = None
+        self.discovery_limit = 10
+        self.minimum_confidence = 0.8
+        self.last_discovery_at: str | None = None
+        self.next_discovery_at: str | None = None
+        self.pending_events: list[dict] = []
+        self.notifications: list[dict] = []
+        self.notification_sequence = 0
+        self.active_violation_families: set[str] = set()
         self.discovery = {
             "state": "idle",
             "message": "No discovery has been run in this session.",
@@ -92,7 +146,13 @@ class DashboardState:
                 raise ValueError("Wait for market discovery to finish before disconnecting.")
             self.chatgpt.disconnect()
 
-    def start_discovery(self, limit: int, minimum_confidence: float) -> None:
+    def start_discovery(
+        self,
+        limit: int,
+        minimum_confidence: float,
+        *,
+        scheduled: bool = False,
+    ) -> None:
         if not 1 <= limit <= 50:
             raise ValueError("Discovery limit must be between 1 and 50.")
         if not 0 <= minimum_confidence <= 1:
@@ -102,6 +162,18 @@ class DashboardState:
                 raise ValueError("Connect your ChatGPT plan before discovering markets.")
             if self.discovery_thread and self.discovery_thread.is_alive():
                 raise ValueError("Market discovery is already running.")
+            if (
+                not scheduled
+                and self.next_discovery_at
+                and datetime.fromisoformat(self.next_discovery_at) > datetime.now(timezone.utc)
+            ):
+                raise ValueError(
+                    "The AI review runs once per hour. Wait until the next scheduled review."
+                )
+            if scheduled and self.pending_events:
+                return
+            self.discovery_limit = limit
+            self.minimum_confidence = minimum_confidence
             self.discovery = {
                 "state": "running",
                 "message": "Finding active Polymarket event groups for plan-backed review...",
@@ -141,28 +213,78 @@ class DashboardState:
                         processed=index,
                         message=f"Classified {index} of {len(events)} event group(s).",
                     )
-            summary = register_classified_events(
-                events,
-                registry_path=DEFAULT_MONITORING_REGISTRY,
-                minimum_confidence=minimum_confidence,
-            )
-            report["monitoring"] = summary
+            for event in events:
+                classification = event.get("classification") or {}
+                event["approval_eligible"] = bool(
+                    classification.get("relationship_found")
+                    and classification.get("law") in PROBABILITY_LAWS
+                )
+                event["meets_confidence"] = (
+                    float(classification.get("confidence") or 0)
+                    >= minimum_confidence
+                )
+            report["monitoring"] = {"state": "pending_user_approval"}
             write_discovery_report(report, MONITORING_DIR / "latest_discovery.json")
-            accepted = len(summary["accepted"])
-            skipped = len(summary["skipped"])
+            now = datetime.now(timezone.utc)
             with self.lock:
+                self.pending_events = events
+                self.last_discovery_at = now.isoformat()
+                self.next_discovery_at = (
+                    now + timedelta(hours=AI_DISCOVERY_INTERVAL_HOURS)
+                ).isoformat()
                 self.discovery.update(
-                    state="complete",
+                    state="awaiting_approval",
                     message=(
-                        f"Discovery complete: {accepted} group(s) approved for "
-                        f"monitoring and {skipped} skipped."
+                        f"{len(events)} event group(s) are ready for your approval. "
+                        "Nothing new will be monitored until you approve it."
                     ),
                 )
         except Exception as error:  # Surface background failures in the UI.
             with self.lock:
                 self.discovery.update(state="error", message=str(error))
 
-    def start_monitoring(self, interval_minutes: float = 5) -> None:
+    def approve_discovery(self, event_ids: list[str] | None = None) -> dict:
+        with self.lock:
+            wanted = None if event_ids is None else set(event_ids)
+            selected = [
+                event for event in self.pending_events
+                if (wanted is None or str(event.get("event_id")) in wanted)
+                and event.get("approval_eligible")
+            ]
+        if not selected:
+            raise ValueError("Select at least one eligible event group to approve.")
+        summary = register_classified_events(
+            selected,
+            registry_path=DEFAULT_MONITORING_REGISTRY,
+            minimum_confidence=0,
+            allow_review=True,
+        )
+        accepted_ids = {
+            key.removeprefix("polymarket:event:") for key in summary["accepted"]
+        }
+        with self.lock:
+            self.pending_events = [
+                event for event in self.pending_events
+                if str(event.get("event_id")) not in accepted_ids
+            ]
+            self.discovery.update(
+                state="awaiting_approval" if self.pending_events else "complete",
+                message=(
+                    f"Approved {len(accepted_ids)} event group(s). "
+                    f"{len(self.pending_events)} still awaiting review."
+                ),
+            )
+        return summary
+
+    def dismiss_discovery(self) -> None:
+        with self.lock:
+            self.pending_events = []
+            self.discovery.update(state="complete", message="Discovery review completed.")
+
+    def start_monitoring(
+        self,
+        interval_minutes: float = DEFAULT_SNAPSHOT_INTERVAL_MINUTES,
+    ) -> None:
         if interval_minutes <= 0:
             raise ValueError("Monitoring interval must be greater than zero.")
         families = load_monitored_families()
@@ -176,6 +298,10 @@ class DashboardState:
             self.monitor_state = "running"
             self.monitor_message = "Collecting the first price snapshot..."
             self.next_snapshot_at = None
+            if not self.next_discovery_at:
+                self.next_discovery_at = (
+                    datetime.now(timezone.utc) + timedelta(hours=AI_DISCOVERY_INTERVAL_HOURS)
+                ).isoformat()
             self.monitor_thread = threading.Thread(
                 target=self._monitor_loop,
                 daemon=True,
@@ -198,12 +324,14 @@ class DashboardState:
                     family.get("violation_count", 0)
                     for family in snapshot.get("families", [])
                 )
+                self._record_violation_notifications(snapshot)
                 with self.lock:
                     self.monitor_message = (
                         f"Saved {len(snapshot['families'])} family result(s) to "
                         f"{output_path.name}; {violations} violation(s) detected."
                     )
                     self.next_snapshot_at = next_time.isoformat()
+                self._start_scheduled_discovery_if_due()
                 if self.monitor_stop.wait(self.monitor_interval_minutes * 60):
                     break
         except Exception as error:  # Surface background failures in the UI.
@@ -218,6 +346,59 @@ class DashboardState:
                     self.monitor_message = "Monitoring stopped."
                 self.next_snapshot_at = None
 
+    def _start_scheduled_discovery_if_due(self) -> None:
+        with self.lock:
+            due = self.next_discovery_at and datetime.fromisoformat(
+                self.next_discovery_at
+            ) <= datetime.now(timezone.utc)
+            can_start = not self.pending_events and not (
+                self.discovery_thread and self.discovery_thread.is_alive()
+            )
+            limit = self.discovery_limit
+            confidence = self.minimum_confidence
+        if due and can_start:
+            self.start_discovery(limit, confidence, scheduled=True)
+
+    def _record_violation_notifications(self, snapshot: dict) -> None:
+        current = {
+            str(family.get("name"))
+            for family in snapshot.get("families", [])
+            if family.get("coherent") is False
+        }
+        with self.lock:
+            newly_violating = current - self.active_violation_families
+            self.active_violation_families = current
+        for name in sorted(newly_violating):
+            family = next(
+                item for item in snapshot.get("families", []) if item.get("name") == name
+            )
+            count = int(family.get("violation_count", 0))
+            message = f"{name}: {count} probability-law violation(s) detected."
+            with self.lock:
+                self.notification_sequence += 1
+                self.notifications.append(
+                    {
+                        "id": self.notification_sequence,
+                        "timestamp": snapshot.get("timestamp"),
+                        "title": "Antilego violation",
+                        "message": message,
+                        "family": name,
+                    }
+                )
+                self.notifications = self.notifications[-50:]
+            script = (
+                "on run argv\n"
+                "display notification (item 2 of argv) with title (item 1 of argv)\n"
+                "end run"
+            )
+            try:
+                subprocess.Popen(
+                    ["/usr/bin/osascript", "-e", script, "Antilego violation", message],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+            except OSError:
+                pass
     def stop_monitoring(self) -> None:
         with self.lock:
             if not self.monitor_thread or not self.monitor_thread.is_alive():
@@ -308,6 +489,23 @@ class DashboardState:
                 }
             )
         with self.lock:
+            pending = []
+            for event in self.pending_events:
+                classification = event.get("classification") or {}
+                pending.append(
+                    {
+                        "event_id": str(event.get("event_id") or ""),
+                        "title": event.get("title") or "Untitled event",
+                        "contract_count": len(event.get("contracts", [])),
+                        "volume": event.get("volume"),
+                        "law": classification.get("law"),
+                        "confidence": classification.get("confidence"),
+                        "reason": classification.get("reason"),
+                        "requires_review": bool(classification.get("requires_review")),
+                        "eligible": bool(event.get("approval_eligible")),
+                        "meets_confidence": bool(event.get("meets_confidence")),
+                    }
+                )
             return {
                 "chatgpt": self.chatgpt.status(),
                 "monitor": {
@@ -317,7 +515,15 @@ class DashboardState:
                     "next_snapshot_at": self.next_snapshot_at,
                 },
                 "discovery": dict(self.discovery),
+                "discovery_schedule": {
+                    "cadence_hours": AI_DISCOVERY_INTERVAL_HOURS,
+                    "last_discovery_at": self.last_discovery_at,
+                    "next_discovery_at": self.next_discovery_at,
+                },
+                "pending_events": pending,
                 "graphs": {**self.graphs, "items": figures},
+                "history": _snapshot_history(live_snapshot_path()),
+                "notifications": list(self.notifications),
                 "monitored_families": monitored,
                 "family_count": len(monitored),
                 "latest_snapshot_at": (snapshot or {}).get("timestamp"),
@@ -484,9 +690,18 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     int(payload.get("limit", 10)),
                     float(payload.get("minimum_confidence", 0.8)),
                 )
+            elif path == "/api/discovery/approve":
+                event_ids = payload.get("event_ids")
+                if not isinstance(event_ids, list):
+                    raise ValueError("event_ids must be a list.")
+                self.server.state.approve_discovery([str(value) for value in event_ids])
+            elif path == "/api/discovery/approve-all":
+                self.server.state.approve_discovery()
+            elif path == "/api/discovery/dismiss":
+                self.server.state.dismiss_discovery()
             elif path == "/api/monitor/start":
                 self.server.state.start_monitoring(
-                    float(payload.get("interval_minutes", 5))
+                    float(payload.get("interval_minutes", DEFAULT_SNAPSHOT_INTERVAL_MINUTES))
                 )
             elif path == "/api/monitor/stop":
                 self.server.state.stop_monitoring()

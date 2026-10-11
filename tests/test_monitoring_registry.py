@@ -61,6 +61,16 @@ class MonitoringRegistryTests(unittest.TestCase):
             family_from_classification(EVENT, {**APPROVED, "law": "invented_law"})
         )
 
+    def test_explicit_user_approval_can_accept_review_flag(self):
+        review = {**APPROVED, "requires_review": True, "confidence": 0.55}
+        family = family_from_classification(
+            EVENT,
+            review,
+            minimum_confidence=0,
+            allow_review=True,
+        )
+        self.assertEqual(family["monitoring_key"], "polymarket:event:event-1")
+
     def test_register_upserts_same_event_instead_of_duplicating(self):
         with tempfile.TemporaryDirectory() as directory:
             registry = Path(directory) / "monitoring.json"

@@ -25,12 +25,13 @@ def family_from_classification(
     classification: object,
     *,
     minimum_confidence: float = 0.8,
+    allow_review: bool = False,
 ) -> dict | None:
     """Convert one approved classification into a collector-ready family."""
     classification = _classification_dict(classification)
     if not classification.get("relationship_found"):
         return None
-    if classification.get("requires_review"):
+    if classification.get("requires_review") and not allow_review:
         return None
     confidence = classification.get("confidence")
     if not isinstance(confidence, (int, float)) or isinstance(confidence, bool):
@@ -129,6 +130,7 @@ def register_classified_events(
     *,
     registry_path: Path = DEFAULT_MONITORING_REGISTRY,
     minimum_confidence: float = 0.8,
+    allow_review: bool = False,
 ) -> dict:
     """Upsert approved event classifications and report what was skipped."""
     if not 0 <= minimum_confidence <= 1:
@@ -150,6 +152,7 @@ def register_classified_events(
             event,
             classification,
             minimum_confidence=minimum_confidence,
+            allow_review=allow_review,
         )
         if family is None:
             skipped.append(str(event.get("event_id") or event.get("title") or "unknown"))
