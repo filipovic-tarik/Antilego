@@ -4,10 +4,80 @@ import unittest
 from pathlib import Path
 
 from antilego.antilego_engine import analyze_archive
-from antilego.market_tracking import append_snapshot, collect_snapshot, run_collection
+from antilego.market_tracking import (
+    append_snapshot,
+    collect_snapshot,
+    executable_quote,
+    run_collection,
+)
 
 
 class OfflinePipelineTests(unittest.TestCase):
+    def test_executable_quote_uses_depth_weighted_prices(self):
+        quote = executable_quote(
+            {
+                "status": "book_available",
+                "asks": [{"price": 0.4, "size": 3}, {"price": 0.5, "size": 4}],
+                "bids": [{"price": 0.35, "size": 5}],
+            },
+            5,
+        )
+        self.assertAlmostEqual(quote["buy_price"], 0.44)
+        self.assertAlmostEqual(quote["sell_price"], 0.35)
+        self.assertEqual(quote["quote_status"], "executable")
+
+    def test_empty_order_books_are_illiquid_instead_of_fifty_percent(self):
+        family = {
+            "name": "Empty books",
+            "type": "exhaustive_outcomes",
+            "constraint": "sum to one",
+            "markets": [
+                {"label": "A", "asset_id": "a"},
+                {"label": "B", "asset_id": "b"},
+            ],
+        }
+        empty_book = {
+            "status": "empty_book",
+            "bids": [],
+            "asks": [],
+            "min_order_size": 5,
+        }
+        result = collect_snapshot([family], lambda _asset_id: empty_book)["families"][0]
+        self.assertIsNone(result["coherent"])
+        self.assertFalse(result["data_complete"])
+        self.assertEqual(result["liquidity_status"], "illiquid")
+        self.assertEqual(result["violation_count"], 0)
+
+    def test_exhaustive_family_uses_executable_asks_and_bids(self):
+        family = {
+            "name": "Two outcomes",
+            "type": "exhaustive_outcomes",
+            "constraint": "sum to one",
+            "markets": [
+                {"label": "A", "asset_id": "a"},
+                {"label": "B", "asset_id": "b"},
+            ],
+        }
+        books = {
+            "a": {
+                "status": "book_available",
+                "asks": [{"price": 0.42, "size": 10}],
+                "bids": [{"price": 0.39, "size": 10}],
+                "min_order_size": 5,
+            },
+            "b": {
+                "status": "book_available",
+                "asks": [{"price": 0.43, "size": 10}],
+                "bids": [{"price": 0.4, "size": 10}],
+                "min_order_size": 5,
+            },
+        }
+        result = collect_snapshot([family], books.get)["families"][0]
+        self.assertFalse(result["coherent"])
+        self.assertEqual(result["liquidity_status"], "executable")
+        self.assertAlmostEqual(result["sum"], 0.85)
+        self.assertEqual(result["price_side"], "buy")
+
     def test_collect_save_load_and_analyze(self):
         families = [
             {

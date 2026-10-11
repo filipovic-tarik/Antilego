@@ -10,12 +10,12 @@ import unittest
 import urllib.request
 
 from antilego.market_discovery import discover_active_market_groups
-from antilego.market_tracking import collect_snapshot, fetch_midpoint
+from antilego.market_tracking import collect_snapshot, fetch_order_book
 
 
 @unittest.skipUnless(os.environ.get("ANTILEGO_LIVE_TEST") == "1", "live test disabled")
 class LivePolymarketTests(unittest.TestCase):
-    def test_active_market_has_public_midpoint(self):
+    def test_active_market_has_public_order_book(self):
         request = urllib.request.Request(
             "https://gamma-api.polymarket.com/markets?active=true&closed=false&limit=1",
             headers={"User-Agent": "Antilego/1.0 (read-only research)"},
@@ -32,10 +32,8 @@ class LivePolymarketTests(unittest.TestCase):
             "markets": [{"label": market["question"], "asset_id": token_ids[0]}],
         }
         snapshot = collect_snapshot([family])
-        midpoint = snapshot["families"][0]["markets"][0]["price"]
-        self.assertIsNotNone(midpoint)
-        self.assertGreaterEqual(midpoint, 0.0)
-        self.assertLessEqual(midpoint, 1.0)
+        market_result = snapshot["families"][0]["markets"][0]
+        self.assertIn(market_result["quote_status"], {"executable", "illiquid", "empty_book"})
 
     def test_discovers_current_tradable_contract_group(self):
         groups = discover_active_market_groups(
@@ -46,11 +44,11 @@ class LivePolymarketTests(unittest.TestCase):
         self.assertEqual(len(groups), 1)
         self.assertGreaterEqual(len(groups[0]["contracts"]), 2)
         self.assertTrue(all(contract["asset_id"] for contract in groups[0]["contracts"]))
-        prices = [
-            fetch_midpoint(contract["asset_id"])
+        books = [
+            fetch_order_book(contract["asset_id"])
             for contract in groups[0]["contracts"][:5]
         ]
-        self.assertTrue(any(price is not None for price in prices))
+        self.assertTrue(any(book["status"] != "unavailable" for book in books))
 
 
 if __name__ == "__main__":

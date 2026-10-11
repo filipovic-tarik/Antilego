@@ -124,6 +124,12 @@ def evaluate_family(
 ) -> dict:
     """Evaluate one market family using its registered probability law."""
     all_markets = family.get("markets", [])
+    if family.get("pricing_mode") == "executable_order_book":
+        return _evaluate_executable_family(
+            family,
+            exclusivity_tolerance=exclusivity_tolerance,
+            exhaustive_tolerance=exhaustive_tolerance,
+        )
     markets = [market for market in all_markets if market.get("price") is not None]
     family_type = family.get("type")
 
@@ -190,6 +196,115 @@ def evaluate_family(
         "non_exhaustive_exclusivity",
     }:
         result["sum"] = sum(float(market["price"]) for market in markets)
+    return result
+
+
+def _executable_incomplete(markets: list[dict], required_fields: tuple[str, ...]) -> dict | None:
+    missing = sum(
+        1 for market in markets if any(market.get(field) is None for field in required_fields)
+    )
+    if not missing:
+        return None
+    statuses = {str(market.get("quote_status") or "unavailable") for market in markets}
+    liquidity_status = "incomplete" if "unavailable" in statuses else "illiquid"
+    return {
+        "coherent": None,
+        "data_complete": False,
+        "law_supported": True,
+        "liquidity_status": liquidity_status,
+        "violation_count": 0,
+        "violations": [],
+        "missing_prices": missing,
+    }
+
+
+def _evaluate_executable_family(
+    family: dict,
+    *,
+    exclusivity_tolerance: float,
+    exhaustive_tolerance: float,
+) -> dict:
+    """Evaluate executable cross-book trades instead of non-tradable midpoints."""
+    markets = family.get("markets", [])
+    family_type = family.get("type")
+    if family_type not in PROBABILITY_LAWS:
+        return {
+            "coherent": None,
+            "data_complete": True,
+            "law_supported": False,
+            "liquidity_status": "incomplete",
+            "violation_count": 0,
+            "violations": [],
+            "error": f"Unsupported probability law: {family_type}",
+        }
+    required_count = LAW_MARKET_REQUIREMENTS.get(family_type)
+    minimum_count = LAW_MINIMUM_MARKETS.get(family_type, 1)
+    if (required_count is not None and len(markets) != required_count) or len(markets) < minimum_count:
+        return {
+            "coherent": None,
+            "data_complete": True,
+            "law_supported": True,
+            "liquidity_status": "incomplete",
+            "violation_count": 0,
+            "violations": [],
+            "error": f"{family_type} has an invalid market count",
+        }
+
+    violations = []
+    result_sum = None
+    price_side = None
+    if family_type in {"exhaustive_outcomes", "mutually_exclusive", "complements"}:
+        incomplete = _executable_incomplete(markets, ("buy_price", "sell_price"))
+        if incomplete:
+            return incomplete
+        buy_total = sum(float(market["buy_price"]) for market in markets)
+        sell_total = sum(float(market["sell_price"]) for market in markets)
+        buy_gap = 1.0 - buy_total
+        sell_gap = sell_total - 1.0
+        tolerance = exhaustive_tolerance if family_type in {"exhaustive_outcomes", "mutually_exclusive"} else exclusivity_tolerance
+        if buy_gap > tolerance:
+            violations.append(_violation("executable ask sum", "1.0", buy_gap, "<"))
+        if sell_gap > tolerance:
+            violations.append(_violation("executable bid sum", "1.0", sell_gap, ">"))
+        if buy_gap >= sell_gap:
+            result_sum, price_side = buy_total, "buy"
+        else:
+            result_sum, price_side = sell_total, "sell"
+    elif family_type == "non_exhaustive_exclusivity":
+        incomplete = _executable_incomplete(markets, ("sell_price",))
+        if incomplete:
+            return incomplete
+        result_sum = sum(float(market["sell_price"]) for market in markets)
+        price_side = "sell"
+        excess = result_sum - 1.0
+        if excess > exclusivity_tolerance:
+            violations.append(_violation("executable bid sum", "1.0", excess, ">"))
+    else:
+        incomplete = _executable_incomplete(markets, ("buy_price", "sell_price"))
+        if incomplete:
+            return incomplete
+        for left, right in zip(markets, markets[1:]):
+            if family_type == "threshold_chain":
+                excess = float(right["sell_price"]) - float(left["buy_price"])
+                if excess > 0:
+                    violations.append(_violation(left["label"], right["label"], excess, "<"))
+            else:
+                excess = float(left["sell_price"]) - float(right["buy_price"])
+                if excess > 0:
+                    violations.append(_violation(left["label"], right["label"], excess, ">"))
+
+    result = {
+        "coherent": not violations,
+        "data_complete": True,
+        "law_supported": True,
+        "liquidity_status": "executable",
+        "violation_count": len(violations),
+        "violations": violations,
+        "missing_prices": 0,
+    }
+    if result_sum is not None:
+        result["sum"] = result_sum
+        result["price_side"] = price_side
     return result
 
 

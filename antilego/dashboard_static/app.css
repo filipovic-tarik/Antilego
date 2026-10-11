@@ -145,6 +145,7 @@ input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 2px r
 .status-pill.good { color: var(--success); border-color: rgba(66,220,143,.35); }
 .status-pill.bad { color: #ffacac; border-color: rgba(237,106,106,.45); }
 .status-pill.incomplete { color: #f2cd87; border-color: rgba(232,182,91,.45); }
+.status-pill.illiquid { color: #c9b58c; border-color: rgba(201,181,140,.4); }
 .signal { font-weight: 700; }
 .signal.bad { color: var(--red); }
 .empty-state { padding: 55px 10px; color: var(--muted); text-align: center; }
