@@ -107,6 +107,30 @@ class DashboardStateTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Select at least one"):
             state.approve_discovery([])
 
+    def test_clear_all_removes_live_data_but_keeps_application(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            archive = root / "archive" / "current-week"
+            registry = root / "monitoring" / "monitored_families.json"
+            discovery = root / "monitoring" / "latest_discovery.json"
+            (archive / "figures").mkdir(parents=True)
+            registry.parent.mkdir(parents=True)
+            (archive / "figures" / "chart.png").write_bytes(b"chart")
+            registry.write_text("{}", encoding="utf-8")
+            discovery.write_text("{}", encoding="utf-8")
+            state = DashboardState()
+            state.pending_events = [{"event_id": "event-1"}]
+            with (
+                patch("antilego.dashboard.weekly_archive_dir", return_value=archive),
+                patch("antilego.dashboard.DEFAULT_MONITORING_REGISTRY", registry),
+                patch("antilego.dashboard.MONITORING_DIR", discovery.parent),
+            ):
+                state.clear_all_data()
+            self.assertFalse(archive.exists())
+            self.assertFalse(registry.exists())
+            self.assertFalse(discovery.exists())
+            self.assertEqual(state.pending_events, [])
+
     def test_history_preserves_violation_windows_and_magnitude(self):
         records = [
             {

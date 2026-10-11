@@ -136,11 +136,11 @@ function drawChart(canvas, family) {
   const idealY = y(idealValue);
   ctx.save();
   ctx.setLineDash([6, 5]);
-  ctx.strokeStyle = "rgba(255,255,255,.72)";
+  ctx.strokeStyle = "#42dc8f";
   ctx.lineWidth = 1;
   ctx.beginPath(); ctx.moveTo(pad.left, idealY); ctx.lineTo(width - pad.right, idealY); ctx.stroke();
   ctx.restore();
-  ctx.fillStyle = "rgba(255,255,255,.76)";
+  ctx.fillStyle = "#42dc8f";
   const idealText = `${(idealValue * 100).toFixed(0)}% ideal`;
   ctx.fillText(idealText, width - pad.right - ctx.measureText(idealText).width, Math.max(pad.top + 11, idealY - 6));
   points.forEach((point, index) => {
@@ -240,6 +240,7 @@ function render(status) {
   $("#discover").disabled = discovering || !connected || status.pending_events.length > 0 || aiCooldown;
   $("#start-monitor").disabled = running || discovering || !status.family_count;
   $("#stop-monitor").disabled = !running;
+  $("#clear-all").disabled = running || discovering;
   renderApprovals(status.pending_events || []);
   renderMarkets(status.monitored_families);
   renderLiveCharts(status.history);
@@ -280,6 +281,14 @@ $("#enable-notifications").addEventListener("click", async () => {
   const permission = await Notification.requestPermission();
   $("#enable-notifications").textContent = permission === "granted" ? "Browser alerts enabled" : "Enable browser alerts";
   showToast(permission === "granted" ? "Browser violation alerts enabled." : "Notification permission was not granted.", permission !== "granted");
+});
+$("#clear-all").addEventListener("click", async () => {
+  const confirmed = window.confirm(
+    "Clear all discovered events, monitored markets, snapshots, reports, and graphs? This cannot be undone."
+  );
+  if (!confirmed) return;
+  selectedEventIds.clear();
+  await action("/api/clear-all", {}, "All Antilego market data and graphs were cleared.");
 });
 $("#open-folder").addEventListener("click", () => action("/api/open-folder", {}, "Opened the weekly data folder."));
 $("#quit-app").addEventListener("click", async () => {

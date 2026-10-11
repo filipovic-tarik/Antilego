@@ -7,6 +7,7 @@ import html
 import json
 import mimetypes
 import secrets
+import shutil
 import subprocess
 import sys
 import threading
@@ -496,6 +497,45 @@ class DashboardState:
         destination.mkdir(parents=True, exist_ok=True)
         subprocess.Popen(["/usr/bin/open", str(destination)])
 
+    def clear_all_data(self) -> None:
+        """Clear live discoveries, monitored families, and generated evidence."""
+        with self.lock:
+            if self.monitor_thread and self.monitor_thread.is_alive():
+                raise ValueError("Stop monitoring before clearing Antilego data.")
+            if self.discovery_thread and self.discovery_thread.is_alive():
+                raise ValueError("Wait for discovery to finish before clearing data.")
+            if self.graph_thread and self.graph_thread.is_alive():
+                raise ValueError("Wait for graph generation to finish before clearing data.")
+
+            current_archive = weekly_archive_dir()
+            if current_archive.exists():
+                shutil.rmtree(current_archive)
+            for path in (
+                DEFAULT_MONITORING_REGISTRY,
+                MONITORING_DIR / "latest_discovery.json",
+            ):
+                path.unlink(missing_ok=True)
+
+            self.pending_events = []
+            self.notifications = []
+            self.notification_sequence = 0
+            self.active_violation_families = set()
+            self.last_discovery_at = None
+            self.next_discovery_at = None
+            self.next_snapshot_at = None
+            self.discovery = {
+                "state": "idle",
+                "message": "All discovered events and monitored markets were cleared.",
+                "processed": 0,
+                "total": 0,
+            }
+            self.graphs = {
+                "state": "idle",
+                "message": "All saved snapshots, reports, and graphs were cleared.",
+            }
+            self.monitor_state = "stopped"
+            self.monitor_message = "Antilego data cleared. Discover markets to begin again."
+
     def status(self) -> dict:
         families = load_monitored_families()
         snapshot = _latest_jsonl_record(live_snapshot_path())
@@ -751,6 +791,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 self.server.state.generate_graphs()
             elif path == "/api/open-folder":
                 self.server.state.open_data_folder()
+            elif path == "/api/clear-all":
+                self.server.state.clear_all_data()
             elif path == "/api/quit":
                 self.server.state.stop_monitoring()
                 threading.Thread(target=self.server.shutdown, daemon=True).start()
