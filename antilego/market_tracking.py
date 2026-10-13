@@ -177,6 +177,7 @@ def collect_snapshot(
                 }
             )
         family_result = {
+            "monitoring_key": family.get("monitoring_key"),
             "name": family["name"],
             "type": family["type"],
             "constraint": family["constraint"],

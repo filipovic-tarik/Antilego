@@ -276,9 +276,9 @@ $("#discover").addEventListener("click", () => action("/api/discover", { limit: 
 $("#start-monitor").addEventListener("click", () => action("/api/monitor/start", { interval_minutes: Number($("#interval").value) }, "Monitoring started on a fixed three-minute cadence."));
 $("#stop-monitor").addEventListener("click", () => action("/api/monitor/stop", {}, "Monitoring is stopping."));
 $("#approve-selected").addEventListener("click", async () => {
-  if (await action("/api/discovery/approve", { event_ids: [...selectedEventIds] }, "Selected event groups approved.")) selectedEventIds.clear();
+  if (await action("/api/discovery/approve", { event_ids: [...selectedEventIds] }, "Approval review complete. Families without executable quotes were skipped.")) selectedEventIds.clear();
 });
-$("#approve-all").addEventListener("click", () => action("/api/discovery/approve-all", {}, "All eligible event groups approved."));
+$("#approve-all").addEventListener("click", () => action("/api/discovery/approve-all", {}, "Approval review complete. Families without executable quotes were skipped."));
 $("#dismiss-approval").addEventListener("click", () => action("/api/discovery/dismiss", {}, "Remaining discoveries dismissed."));
 $("#enable-notifications").addEventListener("click", async () => {
   if (!("Notification" in window)) { showToast("Browser notifications are not supported here.", true); return; }

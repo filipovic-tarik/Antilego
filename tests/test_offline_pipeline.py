@@ -43,6 +43,7 @@ class OfflinePipelineTests(unittest.TestCase):
             "min_order_size": 5,
         }
         result = collect_snapshot([family], lambda _asset_id: empty_book)["families"][0]
+        self.assertIsNone(result["monitoring_key"])
         self.assertIsNone(result["coherent"])
         self.assertFalse(result["data_complete"])
         self.assertEqual(result["liquidity_status"], "illiquid")
