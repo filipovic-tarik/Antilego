@@ -25,7 +25,12 @@ Contracts must share compatible settlement semantics and resolution criteria.
 Return contract IDs in the exact logical order required by the selected law.
 
 Law meanings:
-- deadline_nesting: same event, ordered earlier to later deadline.
+- deadline_nesting: cumulative occurrence contracts such as "happens by date",
+  ordered earlier to later. Probabilities must be nondecreasing. The underlying
+  event need not ever happen, and these contracts must not be treated as exhaustive.
+- survival_deadline_nesting: ongoing-state contracts such as "continues through",
+  "remains through", or "survives until", ordered earlier to later. Probabilities
+  must be nonincreasing. These contracts must not be treated as exhaustive.
 - threshold_chain: same measurement, ordered easier to harder threshold.
 - exhaustive_outcomes: mutually exclusive outcomes that collectively cover every result.
 - complements: exactly A and not-A for the same proposition.
@@ -34,6 +39,8 @@ Law meanings:
 
 Use requires_review=true whenever wording, resolution rules, exhaustiveness,
 ordering, or event identity is ambiguous. Confidence is between 0 and 1.
+Never classify deadline-indexed contracts as exhaustive unless each contract is a
+disjoint outcome bucket and the rules explicitly cover every possible outcome.
 """.strip()
 
 CLASSIFICATION_SCHEMA = {

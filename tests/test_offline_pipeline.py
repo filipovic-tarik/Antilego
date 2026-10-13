@@ -79,6 +79,34 @@ class OfflinePipelineTests(unittest.TestCase):
         self.assertAlmostEqual(result["sum"], 0.85)
         self.assertEqual(result["price_side"], "buy")
 
+    def test_survival_deadline_uses_executable_reverse_ordering(self):
+        family = {
+            "name": "Continues through",
+            "type": "survival_deadline_nesting",
+            "constraint": "earlier >= later",
+            "markets": [
+                {"label": "October", "asset_id": "oct"},
+                {"label": "November", "asset_id": "nov"},
+            ],
+        }
+        books = {
+            "oct": {
+                "status": "book_available",
+                "asks": [{"price": 0.72, "size": 10}],
+                "bids": [{"price": 0.70, "size": 10}],
+                "min_order_size": 5,
+            },
+            "nov": {
+                "status": "book_available",
+                "asks": [{"price": 0.62, "size": 10}],
+                "bids": [{"price": 0.60, "size": 10}],
+                "min_order_size": 5,
+            },
+        }
+        result = collect_snapshot([family], books.get)["families"][0]
+        self.assertTrue(result["coherent"])
+        self.assertEqual(result["liquidity_status"], "executable")
+
     def test_collect_save_load_and_analyze(self):
         families = [
             {
