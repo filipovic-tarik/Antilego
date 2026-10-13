@@ -44,6 +44,12 @@ DEFAULT_PORT = 8766
 DEFAULT_SNAPSHOT_INTERVAL_MINUTES = 3.0
 AI_DISCOVERY_INTERVAL_HOURS = 1
 HISTORY_LIMIT = 360
+ORDERED_PROBABILITY_LAWS = {
+    "deadline_nesting",
+    "survival_deadline_nesting",
+    "threshold_chain",
+    "logical_implication",
+}
 
 
 def _latest_jsonl_record(path: Path) -> dict | None:
@@ -88,6 +94,7 @@ def _snapshot_history(path: Path, limit: int = HISTORY_LIMIT) -> dict:
             )
             total = family.get("sum")
             uses_probability_sum = isinstance(total, (int, float))
+            uses_market_probabilities = family.get("type") in ORDERED_PROBABILITY_LAWS
             value = float(total) if uses_probability_sum else magnitude
             ideal_value = 1.0 if uses_probability_sum else 0.0
             ideal_label = (
@@ -99,6 +106,13 @@ def _snapshot_history(path: Path, limit: int = HISTORY_LIMIT) -> dict:
                 }
                 else "100% consistency boundary"
                 if uses_probability_sum
+                else "probabilities ordered earlier to later"
+                if family.get("type") == "deadline_nesting"
+                else "probabilities ordered from higher to lower"
+                if family.get("type") in {
+                    "survival_deadline_nesting",
+                    "threshold_chain",
+                }
                 else "0% line of perfect consistency"
             )
             item = series.setdefault(
@@ -109,11 +123,19 @@ def _snapshot_history(path: Path, limit: int = HISTORY_LIMIT) -> dict:
                     "metric_label": (
                         "combined probability"
                         if uses_probability_sum
+                        else "executable probability by contract"
+                        if uses_market_probabilities
                         else "probability discrepancy"
+                    ),
+                    "chart_mode": (
+                        "market_probabilities"
+                        if uses_market_probabilities
+                        else "consistency"
                     ),
                     "ideal_value": ideal_value,
                     "ideal_label": ideal_label,
                     "points": [],
+                    "market_series": [],
                 },
             )
             item["points"].append(
@@ -125,6 +147,32 @@ def _snapshot_history(path: Path, limit: int = HISTORY_LIMIT) -> dict:
                     "complete": family.get("data_complete") is not False,
                 }
             )
+            if uses_market_probabilities:
+                by_label = {
+                    market_series["label"]: market_series
+                    for market_series in item["market_series"]
+                }
+                for market in family.get("markets", []):
+                    if not isinstance(market, dict) or not market.get("label"):
+                        continue
+                    buy_price = market.get("buy_price")
+                    sell_price = market.get("sell_price")
+                    if isinstance(buy_price, (int, float)) and isinstance(
+                        sell_price, (int, float)
+                    ):
+                        probability = (float(buy_price) + float(sell_price)) / 2
+                    elif isinstance(market.get("price"), (int, float)):
+                        probability = float(market["price"])
+                    else:
+                        continue
+                    market_series = by_label.get(market["label"])
+                    if market_series is None:
+                        market_series = {"label": market["label"], "points": []}
+                        item["market_series"].append(market_series)
+                        by_label[market["label"]] = market_series
+                    market_series["points"].append(
+                        {"timestamp": timestamp, "value": probability}
+                    )
     return {"snapshot_count": len(records), "families": list(series.values())}
 
 
