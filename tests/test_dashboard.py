@@ -185,7 +185,7 @@ class DashboardStateTests(unittest.TestCase):
         self.assertEqual([family["name"] for family in payload["families"]], ["Liquid"])
         self.assertEqual(state.pending_events, [])
 
-    def test_clear_all_removes_live_data_but_keeps_application(self):
+    def test_clear_all_resets_dashboard_without_deleting_archive_files(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             archive = root / "archive" / "current-week"
@@ -194,19 +194,28 @@ class DashboardStateTests(unittest.TestCase):
             (archive / "figures").mkdir(parents=True)
             registry.parent.mkdir(parents=True)
             (archive / "figures" / "chart.png").write_bytes(b"chart")
+            snapshot = archive / "market_data" / "snapshots.jsonl"
+            snapshot.parent.mkdir(parents=True)
+            snapshot.write_text(
+                json.dumps({"timestamp": "before", "families": [{"name": "Saved"}]}) + "\n",
+                encoding="utf-8",
+            )
             registry.write_text("{}", encoding="utf-8")
             discovery.write_text("{}", encoding="utf-8")
             state = DashboardState()
             state.pending_events = [{"event_id": "event-1"}]
             with (
                 patch("antilego.dashboard.weekly_archive_dir", return_value=archive),
+                patch("antilego.dashboard.live_snapshot_path", return_value=snapshot),
                 patch("antilego.dashboard.DEFAULT_MONITORING_REGISTRY", registry),
                 patch("antilego.dashboard.MONITORING_DIR", discovery.parent),
             ):
                 state.clear_all_data()
-            self.assertFalse(archive.exists())
-            self.assertFalse(registry.exists())
-            self.assertFalse(discovery.exists())
+            self.assertTrue((archive / "figures" / "chart.png").exists())
+            self.assertEqual(json.loads(registry.read_text(encoding="utf-8"))["families"], [])
+            self.assertEqual(json.loads(discovery.read_text(encoding="utf-8"))["events"], [])
+            self.assertIn('"event":"dashboard_reset"', snapshot.read_text(encoding="utf-8"))
+            self.assertEqual(_snapshot_history(snapshot)["families"], [])
             self.assertEqual(state.pending_events, [])
 
     def test_history_preserves_violation_windows_and_magnitude(self):
@@ -247,7 +256,35 @@ class DashboardStateTests(unittest.TestCase):
             family = _snapshot_history(path)["families"][0]
         self.assertEqual(family["ideal_value"], 1.0)
         self.assertEqual(family["points"][0]["value"], 1.02)
-        self.assertEqual(family["metric_label"], "combined probability")
+        self.assertEqual(family["metric_label"], "executable basket totals")
+        self.assertEqual(family["chart_mode"], "basket_totals")
+
+    def test_exhaustive_history_keeps_buy_and_sell_basket_totals(self):
+        record = {
+            "timestamp": "2026-10-11T10:00:00+00:00",
+            "families": [{
+                "name": "League winner",
+                "type": "exhaustive_outcomes",
+                "coherent": True,
+                "sum": 1.01,
+                "violations": [],
+                "markets": [
+                    {"label": "A", "buy_price": 0.55, "sell_price": 0.52},
+                    {"label": "B", "buy_price": 0.46, "sell_price": 0.43},
+                ],
+            }],
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "snapshots.jsonl"
+            path.write_text(json.dumps(record), encoding="utf-8")
+            family = _snapshot_history(path)["families"][0]
+        self.assertEqual(
+            [series["label"] for series in family["market_series"]],
+            ["Buy all outcomes", "Sell all outcomes"],
+        )
+        self.assertAlmostEqual(family["market_series"][0]["points"][0]["value"], 1.01)
+        self.assertAlmostEqual(family["market_series"][1]["points"][0]["value"], 0.95)
+        self.assertEqual((family["lower_bound"], family["upper_bound"]), (0.97, 1.03))
 
     def test_ordered_law_history_exposes_each_contract_probability(self):
         record = {
@@ -274,6 +311,45 @@ class DashboardStateTests(unittest.TestCase):
             ["October", "November"],
         )
         self.assertAlmostEqual(family["market_series"][0]["points"][0]["value"], 0.70)
+        self.assertAlmostEqual(family["market_series"][0]["points"][0]["buy_value"], 0.72)
+        self.assertAlmostEqual(family["market_series"][0]["points"][0]["sell_value"], 0.68)
+
+    def test_ordered_history_keeps_quote_gaps_visible(self):
+        records = [
+            {
+                "timestamp": "2026-10-13T10:00:00+00:00",
+                "families": [{
+                    "name": "Deadline chain",
+                    "type": "deadline_nesting",
+                    "coherent": True,
+                    "violations": [],
+                    "markets": [
+                        {"label": "October", "buy_price": 0.40, "sell_price": 0.36},
+                        {"label": "November", "buy_price": 0.60, "sell_price": 0.56},
+                    ],
+                }],
+            },
+            {
+                "timestamp": "2026-10-13T10:03:00+00:00",
+                "families": [{
+                    "name": "Deadline chain",
+                    "type": "deadline_nesting",
+                    "coherent": None,
+                    "data_complete": False,
+                    "violations": [],
+                    "markets": [
+                        {"label": "October", "buy_price": None, "sell_price": None},
+                        {"label": "November", "buy_price": 0.61, "sell_price": 0.57},
+                    ],
+                }],
+            },
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "snapshots.jsonl"
+            path.write_text("\n".join(json.dumps(record) for record in records), encoding="utf-8")
+            family = _snapshot_history(path)["families"][0]
+        self.assertIsNone(family["market_series"][0]["points"][1]["value"])
+        self.assertAlmostEqual(family["market_series"][1]["points"][1]["value"], 0.59)
 
     @patch("antilego.dashboard.subprocess.Popen")
     def test_notification_only_fires_when_family_enters_violation(self, popen):

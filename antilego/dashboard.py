@@ -7,7 +7,6 @@ import html
 import json
 import mimetypes
 import secrets
-import shutil
 import subprocess
 import sys
 import threading
@@ -50,6 +49,7 @@ ORDERED_PROBABILITY_LAWS = {
     "threshold_chain",
     "logical_implication",
 }
+EXACT_SUM_LAWS = {"exhaustive_outcomes", "mutually_exclusive", "complements"}
 
 
 def _latest_jsonl_record(path: Path) -> dict | None:
@@ -77,6 +77,11 @@ def _snapshot_history(path: Path, limit: int = HISTORY_LIMIT) -> dict:
             continue
         if isinstance(record, dict):
             records.append(record)
+    last_reset = max(
+        (index for index, record in enumerate(records) if record.get("event") == "dashboard_reset"),
+        default=-1,
+    )
+    records = records[last_reset + 1 :]
     series: dict[str, dict] = {}
     for record in records:
         timestamp = record.get("timestamp")
@@ -95,6 +100,7 @@ def _snapshot_history(path: Path, limit: int = HISTORY_LIMIT) -> dict:
             total = family.get("sum")
             uses_probability_sum = isinstance(total, (int, float))
             uses_market_probabilities = family.get("type") in ORDERED_PROBABILITY_LAWS
+            uses_basket_totals = family.get("type") in EXACT_SUM_LAWS
             value = float(total) if uses_probability_sum else magnitude
             ideal_value = 1.0 if uses_probability_sum else 0.0
             ideal_label = (
@@ -121,7 +127,9 @@ def _snapshot_history(path: Path, limit: int = HISTORY_LIMIT) -> dict:
                     "name": family["name"],
                     "law": family.get("type"),
                     "metric_label": (
-                        "combined probability"
+                        "executable basket totals"
+                        if uses_basket_totals
+                        else "combined probability"
                         if uses_probability_sum
                         else "executable probability by contract"
                         if uses_market_probabilities
@@ -130,12 +138,30 @@ def _snapshot_history(path: Path, limit: int = HISTORY_LIMIT) -> dict:
                     "chart_mode": (
                         "market_probabilities"
                         if uses_market_probabilities
+                        else "basket_totals"
+                        if uses_basket_totals
                         else "consistency"
                     ),
                     "ideal_value": ideal_value,
                     "ideal_label": ideal_label,
                     "points": [],
                     "market_series": [],
+                    "lower_bound": (
+                        0.97
+                        if family.get("type") in {"exhaustive_outcomes", "mutually_exclusive"}
+                        else 0.995
+                        if family.get("type") == "complements"
+                        else None
+                    ),
+                    "upper_bound": (
+                        1.03
+                        if family.get("type") in {"exhaustive_outcomes", "mutually_exclusive"}
+                        else 1.005
+                        if family.get("type") == "complements"
+                        else None
+                    ),
+                    "latest_violations": [],
+                    "target_shares": family.get("target_shares"),
                 },
             )
             item["points"].append(
@@ -147,7 +173,28 @@ def _snapshot_history(path: Path, limit: int = HISTORY_LIMIT) -> dict:
                     "complete": family.get("data_complete") is not False,
                 }
             )
+            point_index = len(item["points"]) - 1
+            item["latest_violations"] = [
+                {
+                    "left": violation.get("left"),
+                    "right": violation.get("right"),
+                    "magnitude": float(violation.get("magnitude", 0)),
+                }
+                for violation in violations
+                if isinstance(violation, dict)
+            ]
+            item["target_shares"] = family.get("target_shares") or item.get("target_shares")
             if uses_market_probabilities:
+                for existing_series in item["market_series"]:
+                    existing_series["points"].append(
+                        {
+                            "index": point_index,
+                            "timestamp": timestamp,
+                            "value": None,
+                            "buy_value": None,
+                            "sell_value": None,
+                        }
+                    )
                 by_label = {
                     market_series["label"]: market_series
                     for market_series in item["market_series"]
@@ -157,9 +204,7 @@ def _snapshot_history(path: Path, limit: int = HISTORY_LIMIT) -> dict:
                         continue
                     buy_price = market.get("buy_price")
                     sell_price = market.get("sell_price")
-                    if isinstance(buy_price, (int, float)) and isinstance(
-                        sell_price, (int, float)
-                    ):
+                    if isinstance(buy_price, (int, float)) and isinstance(sell_price, (int, float)):
                         probability = (float(buy_price) + float(sell_price)) / 2
                     elif isinstance(market.get("price"), (int, float)):
                         probability = float(market["price"])
@@ -167,11 +212,56 @@ def _snapshot_history(path: Path, limit: int = HISTORY_LIMIT) -> dict:
                         continue
                     market_series = by_label.get(market["label"])
                     if market_series is None:
-                        market_series = {"label": market["label"], "points": []}
+                        market_series = {
+                            "label": market["label"],
+                            "points": [
+                                {
+                                    "index": index,
+                                    "timestamp": None,
+                                    "value": None,
+                                    "buy_value": None,
+                                    "sell_value": None,
+                                }
+                                for index in range(point_index + 1)
+                            ],
+                        }
                         item["market_series"].append(market_series)
                         by_label[market["label"]] = market_series
-                    market_series["points"].append(
-                        {"timestamp": timestamp, "value": probability}
+                    market_series["points"][point_index] = {
+                        "index": point_index,
+                        "timestamp": timestamp,
+                        "value": probability,
+                        "buy_value": float(buy_price) if isinstance(buy_price, (int, float)) else None,
+                        "sell_value": float(sell_price) if isinstance(sell_price, (int, float)) else None,
+                    }
+            elif uses_basket_totals:
+                markets = family.get("markets", [])
+                buy_total = family.get("buy_total")
+                sell_total = family.get("sell_total")
+                if not isinstance(buy_total, (int, float)) and markets and all(
+                    isinstance(market.get("buy_price"), (int, float)) for market in markets
+                ):
+                    buy_total = sum(float(market["buy_price"]) for market in markets)
+                if not isinstance(sell_total, (int, float)) and markets and all(
+                    isinstance(market.get("sell_price"), (int, float)) for market in markets
+                ):
+                    sell_total = sum(float(market["sell_price"]) for market in markets)
+                basket_values = (
+                    ("Buy all outcomes", buy_total),
+                    ("Sell all outcomes", sell_total),
+                )
+                by_label = {entry["label"]: entry for entry in item["market_series"]}
+                for label, basket_value in basket_values:
+                    basket_series = by_label.get(label)
+                    if basket_series is None:
+                        basket_series = {"label": label, "points": []}
+                        item["market_series"].append(basket_series)
+                    basket_series["points"].append(
+                        {
+                            "index": point_index,
+                            "timestamp": timestamp,
+                            "value": float(basket_value) if isinstance(basket_value, (int, float)) else None,
+                        }
                     )
     return {"snapshot_count": len(records), "families": list(series.values())}
 
@@ -640,7 +730,7 @@ class DashboardState:
         subprocess.Popen(["/usr/bin/open", str(destination)])
 
     def clear_all_data(self) -> None:
-        """Clear live discoveries, monitored families, and generated evidence."""
+        """Reset active dashboard data while preserving archived evidence files."""
         with self.lock:
             if self.monitor_thread and self.monitor_thread.is_alive():
                 raise ValueError("Stop monitoring before clearing Antilego data.")
@@ -649,14 +739,28 @@ class DashboardState:
             if self.graph_thread and self.graph_thread.is_alive():
                 raise ValueError("Wait for graph generation to finish before clearing data.")
 
-            current_archive = weekly_archive_dir()
-            if current_archive.exists():
-                shutil.rmtree(current_archive)
-            for path in (
-                DEFAULT_MONITORING_REGISTRY,
+            snapshot_path = live_snapshot_path()
+            snapshot_path.parent.mkdir(parents=True, exist_ok=True)
+            with snapshot_path.open("a", encoding="utf-8") as snapshots:
+                snapshots.write(
+                    json.dumps(
+                        {
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                            "event": "dashboard_reset",
+                        },
+                        separators=(",", ":"),
+                    )
+                    + "\n"
+                )
+            write_monitored_families([], DEFAULT_MONITORING_REGISTRY)
+            write_discovery_report(
+                {
+                    "generated_at": datetime.now(timezone.utc).isoformat(),
+                    "events": [],
+                    "reset": True,
+                },
                 MONITORING_DIR / "latest_discovery.json",
-            ):
-                path.unlink(missing_ok=True)
+            )
 
             self.pending_events = []
             self.notifications = []
@@ -673,10 +777,10 @@ class DashboardState:
             }
             self.graphs = {
                 "state": "idle",
-                "message": "All saved snapshots, reports, and graphs were cleared.",
+                "message": "Dashboard reset. Archived snapshots, reports, and graphs were preserved.",
             }
             self.monitor_state = "stopped"
-            self.monitor_message = "Antilego data cleared. Discover markets to begin again."
+            self.monitor_message = "Dashboard reset. Discover markets to begin again; prior files remain archived."
 
     def status(self) -> dict:
         families = load_monitored_families()
