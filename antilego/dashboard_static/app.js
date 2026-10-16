@@ -248,7 +248,8 @@ function renderLiveCharts(history) {
     const legend = `<div class="chart-legend">${legendSeries.map((series, seriesIndex) => {
       const last = series.points?.at(-1);
       const value = last && last.value !== null && last.value !== "" && Number.isFinite(Number(last.value)) ? `${(Number(last.value) * 100).toFixed(1)}%` : "-";
-      return `<span style="--series-color:${palette[seriesIndex % palette.length]}"><i></i>${escapeHtml(series.label)} <b>${value}</b></span>`;
+      const colorClass = `series-${seriesIndex % palette.length}`;
+      return `<span class="${colorClass}"><i></i>${escapeHtml(series.label)} <b>${value}</b></span>`;
     }).join("")}</div>`;
     const latestText = multiSeriesMode ? family.ideal_label : `latest ${((Number(latest.value) || 0) * 100).toFixed(1)}%`;
     const crossings = probabilityMode ? (family.latest_violations || []).filter((item) => item.left && item.right).map((item) => `${item.left} ↔ ${item.right} (${(Number(item.magnitude) * 100).toFixed(1)}%)`) : [];
