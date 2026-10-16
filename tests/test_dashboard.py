@@ -13,6 +13,7 @@ from antilego.dashboard import (
     DashboardState,
     _next_cadence_start,
     _partition_executable_families,
+    _polymarket_event_url,
     _snapshot_history,
 )
 
@@ -95,6 +96,14 @@ class DashboardHTTPTests(unittest.TestCase):
 
 
 class DashboardStateTests(unittest.TestCase):
+    def test_polymarket_event_url_uses_the_discovered_event_slug(self):
+        family = {"source": {"event_slug": "fed decision / october"}}
+        self.assertEqual(
+            _polymarket_event_url(family),
+            "https://polymarket.com/event/fed%20decision%20%2F%20october",
+        )
+        self.assertIsNone(_polymarket_event_url({"source": {}}))
+
     def test_default_snapshot_interval_is_three_minutes(self):
         self.assertEqual(DEFAULT_SNAPSHOT_INTERVAL_MINUTES, 3.0)
 
