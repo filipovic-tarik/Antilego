@@ -15,7 +15,8 @@ import webbrowser
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import quote, urlparse
+from urllib.parse import parse_qs, quote, urlparse
+from urllib.request import Request, urlopen
 
 from .chatgpt_plan import ChatGPTPlanSession
 from .contradiction_brain import PROBABILITY_LAWS
@@ -50,6 +51,175 @@ ORDERED_PROBABILITY_LAWS = {
     "logical_implication",
 }
 EXACT_SUM_LAWS = {"exhaustive_outcomes", "mutually_exclusive", "complements"}
+
+
+def _fee_terms_by_asset(event: dict) -> dict[str, dict]:
+    """Return the current Gamma fee schedule keyed by each market's YES token."""
+    terms = {}
+    for market in event.get("markets", []):
+        if not isinstance(market, dict):
+            continue
+        token_ids = market.get("clobTokenIds", [])
+        outcomes = market.get("outcomes", [])
+        for key, value in (("token_ids", token_ids), ("outcomes", outcomes)):
+            if isinstance(value, str):
+                try:
+                    parsed = json.loads(value)
+                except json.JSONDecodeError:
+                    parsed = []
+                if key == "token_ids":
+                    token_ids = parsed
+                else:
+                    outcomes = parsed
+        if not isinstance(token_ids, list) or not token_ids:
+            continue
+        yes_index = 0
+        if isinstance(outcomes, list):
+            yes_index = next(
+                (index for index, outcome in enumerate(outcomes) if str(outcome).lower() == "yes"),
+                0,
+            )
+        if yes_index >= len(token_ids):
+            continue
+        enabled = bool(market.get("feesEnabled"))
+        schedule = market.get("feeSchedule") or {}
+        rate = schedule.get("rate")
+        exponent = schedule.get("exponent", 1)
+        terms[str(token_ids[yes_index])] = {
+            "known": not enabled or isinstance(rate, (int, float)),
+            "enabled": enabled,
+            "rate": float(rate) if enabled and isinstance(rate, (int, float)) else 0.0,
+            "exponent": float(exponent) if isinstance(exponent, (int, float)) else 1.0,
+            "taker_only": bool(schedule.get("takerOnly", True)),
+        }
+    return terms
+
+
+def _fetch_polymarket_fee_terms(event_id: str) -> dict[str, dict]:
+    request = Request(
+        f"https://gamma-api.polymarket.com/events/{quote(str(event_id), safe='')}",
+        headers={"User-Agent": "Antilego/1.0", "Accept": "application/json"},
+    )
+    with urlopen(request, timeout=15) as response:
+        payload = json.load(response)
+    if not isinstance(payload, dict):
+        raise ValueError("Polymarket returned an invalid fee schedule.")
+    return _fee_terms_by_asset(payload)
+
+
+def _estimate_taker_fee(shares: float, price: float, terms: dict) -> float | None:
+    if not terms.get("known"):
+        return None
+    if not terms.get("enabled"):
+        return 0.0
+    rate = float(terms.get("rate", 0))
+    exponent = float(terms.get("exponent", 1))
+    return shares * rate * ((price * (1 - price)) ** exponent)
+
+
+def _estimate_violation_trades(
+    snapshot_family: dict,
+    fee_terms: dict[str, dict],
+) -> list[dict]:
+    """Convert executable violations into gross and fee-adjusted trade estimates."""
+    shares = float(snapshot_family.get("target_shares") or 0)
+    markets = [market for market in snapshot_family.get("markets", []) if isinstance(market, dict)]
+    by_label = {str(market.get("label")): market for market in markets}
+    family_type = snapshot_family.get("type")
+    opportunities = []
+
+    def build(legs: list[tuple[str, dict, float]], magnitude: float, summary: str) -> dict:
+        rendered_legs = []
+        total_fees = 0.0
+        fees_known = True
+        inventory_required = False
+        for side, market, price in legs:
+            terms = fee_terms.get(str(market.get("asset_id")), {"known": False})
+            fee = _estimate_taker_fee(shares, price, terms)
+            if fee is None:
+                fees_known = False
+            else:
+                total_fees += fee
+            inventory_required = inventory_required or side == "sell"
+            rendered_legs.append(
+                {
+                    "side": side,
+                    "label": market.get("label"),
+                    "price": price,
+                    "shares": shares,
+                    "notional": shares * price,
+                    "fee": fee,
+                    "fee_rate": terms.get("rate") if terms.get("known") else None,
+                    "fee_enabled": terms.get("enabled") if terms.get("known") else None,
+                    "fee_exponent": terms.get("exponent") if terms.get("known") else None,
+                }
+            )
+        gross_profit = max(0.0, float(magnitude)) * shares
+        net_profit = gross_profit - total_fees if fees_known else None
+        if net_profit is None:
+            verdict = "Fee data unavailable"
+        elif net_profit > 0:
+            verdict = "Positive after estimated taker fees"
+        else:
+            verdict = "Not profitable after estimated taker fees"
+        return {
+            "summary": summary,
+            "magnitude": float(magnitude),
+            "shares": shares,
+            "gross_profit": gross_profit,
+            "estimated_fees": total_fees if fees_known else None,
+            "net_profit": net_profit,
+            "verdict": verdict,
+            "inventory_required": inventory_required,
+            "legs": rendered_legs,
+        }
+
+    for violation in snapshot_family.get("violations", []):
+        if not isinstance(violation, dict):
+            continue
+        magnitude = float(violation.get("magnitude", 0))
+        if family_type in ORDERED_PROBABILITY_LAWS:
+            left = by_label.get(str(violation.get("left")))
+            right = by_label.get(str(violation.get("right")))
+            if not left or not right:
+                continue
+            if family_type in {"threshold_chain", "survival_deadline_nesting"}:
+                legs = [
+                    ("buy", left, float(left["buy_price"])),
+                    ("sell", right, float(right["sell_price"])),
+                ]
+            else:
+                legs = [
+                    ("sell", left, float(left["sell_price"])),
+                    ("buy", right, float(right["buy_price"])),
+                ]
+            opportunities.append(
+                build(
+                    legs,
+                    magnitude,
+                    f"Executable crossing between {left['label']} and {right['label']}",
+                )
+            )
+            continue
+
+        price_side = snapshot_family.get("price_side")
+        if family_type == "non_exhaustive_exclusivity":
+            price_side = "sell"
+        if price_side not in {"buy", "sell"}:
+            continue
+        price_key = f"{price_side}_price"
+        if not markets or any(not isinstance(market.get(price_key), (int, float)) for market in markets):
+            continue
+        legs = [(price_side, market, float(market[price_key])) for market in markets]
+        action = "Buy" if price_side == "buy" else "Sell"
+        opportunities.append(
+            build(legs, magnitude, f"{action} the complete executable outcome basket")
+        )
+    return sorted(
+        opportunities,
+        key=lambda item: item["net_profit"] if item["net_profit"] is not None else float("-inf"),
+        reverse=True,
+    )
 
 
 def _polymarket_event_url(family: dict) -> str | None:
@@ -789,6 +959,52 @@ class DashboardState:
             self.monitor_state = "stopped"
             self.monitor_message = "Dashboard reset. Discover markets to begin again; prior files remain archived."
 
+    def analyze_family(self, family_name: str) -> dict:
+        """Build an on-demand, fee-aware report for one current violation."""
+        registry_family = next(
+            (family for family in load_monitored_families() if family.get("name") == family_name),
+            None,
+        )
+        snapshot = _latest_jsonl_record(live_snapshot_path()) or {}
+        snapshot_family = next(
+            (
+                family for family in snapshot.get("families", [])
+                if isinstance(family, dict) and family.get("name") == family_name
+            ),
+            None,
+        )
+        if registry_family is None or snapshot_family is None:
+            raise ValueError("That market family is not available in the latest snapshot.")
+        if snapshot_family.get("coherent") is not False:
+            raise ValueError("This family does not currently have an executable violation.")
+        event_id = str(registry_family.get("source", {}).get("event_id") or "")
+        if not event_id:
+            raise ValueError("The Polymarket event identifier is unavailable.")
+        fee_error = None
+        try:
+            terms = _fetch_polymarket_fee_terms(event_id)
+        except Exception as error:
+            terms = {}
+            fee_error = str(error)
+        opportunities = _estimate_violation_trades(snapshot_family, terms)
+        history = _snapshot_history(live_snapshot_path())
+        chart_family = next(
+            (family for family in history.get("families", []) if family.get("name") == family_name),
+            None,
+        )
+        if not opportunities or chart_family is None:
+            raise ValueError("Antilego could not construct an executable trade analysis for this violation.")
+        return {
+            "name": family_name,
+            "law": snapshot_family.get("type"),
+            "timestamp": snapshot.get("timestamp"),
+            "polymarket_url": _polymarket_event_url(registry_family),
+            "chart": chart_family,
+            "opportunities": opportunities,
+            "fee_error": fee_error,
+            "fee_method": "Polymarket event fee schedule; estimated taker fee per leg",
+        }
+
     def status(self) -> dict:
         families = load_monitored_families()
         snapshot = _latest_jsonl_record(live_snapshot_path())
@@ -969,8 +1185,6 @@ class DashboardHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
         if parsed.path == "/auth/callback":
-            from urllib.parse import parse_qs
-
             try:
                 self.server.state.complete_chatgpt_connection(parse_qs(parsed.query))
                 self._send_html(
@@ -986,12 +1200,22 @@ class DashboardHandler(BaseHTTPRequestHandler):
             payload["csrf_token"] = self.server.csrf_token
             self._send_json(payload)
             return
-        if parsed.path in {"/", "/index.html"}:
-            self._send_file(STATIC_DIR / "index.html")
+        if parsed.path == "/api/analysis":
+            family_name = (parse_qs(parsed.query).get("family") or [""])[0]
+            try:
+                self._send_json(self.server.state.analyze_family(family_name))
+            except ValueError as error:
+                self._send_json({"error": str(error)}, 404)
+            except Exception as error:
+                self._send_json({"error": f"Analysis failed: {error}"}, 500)
+            return
+        if parsed.path in {"/", "/index.html", "/analysis.html"}:
+            name = "analysis.html" if parsed.path == "/analysis.html" else "index.html"
+            self._send_file(STATIC_DIR / name)
             return
         if parsed.path.startswith("/static/"):
             name = Path(parsed.path).name
-            if name not in {"app.css", "app.js"}:
+            if name not in {"app.css", "app.js", "analysis.css", "analysis.js"}:
                 self.send_error(404)
                 return
             self._send_file(STATIC_DIR / name)

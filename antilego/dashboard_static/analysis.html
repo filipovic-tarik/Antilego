@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Violation analysis / Antilego</title>
+  <link rel="stylesheet" href="/static/analysis.css">
+</head>
+<body>
+  <main>
+    <header>
+      <p class="eyebrow">Antilego / execution analysis</p>
+      <h1 id="title">Analyzing violation</h1>
+      <p id="subtitle" class="subtitle">Loading executable prices and the current Polymarket fee schedule...</p>
+    </header>
+    <section id="error" class="error" hidden></section>
+    <section id="report" hidden>
+      <div class="chart-panel">
+        <div class="chart-heading">
+          <div><p class="eyebrow">Enlarged price view</p><h2 id="chart-title"></h2></div>
+          <span class="violation-badge">Violation</span>
+        </div>
+        <div id="legend" class="legend"></div>
+        <canvas id="analysis-chart" aria-label="Enlarged violation chart"></canvas>
+      </div>
+      <div class="analysis-grid">
+        <article class="verdict-panel">
+          <p class="eyebrow">Practical result</p>
+          <h2 id="verdict"></h2>
+          <div class="figures">
+            <div><span>Gross edge</span><strong id="gross"></strong></div>
+            <div><span>Estimated fees</span><strong id="fees"></strong></div>
+            <div class="net"><span>Net profit</span><strong id="net"></strong></div>
+          </div>
+          <p id="execution-note" class="note"></p>
+        </article>
+        <article class="legs-panel">
+          <p class="eyebrow">Executable legs</p>
+          <h2 id="opportunity-title"></h2>
+          <div id="legs"></div>
+          <p id="fee-note" class="note"></p>
+        </article>
+      </div>
+      <a id="polymarket-link" class="market-link" target="_blank" rel="noopener noreferrer">Open this event on Polymarket ↗</a>
+      <p class="disclaimer">This is an execution estimate, not a guaranteed trade. Quotes can move before both legs fill, and a sell leg requires inventory or an equivalent position.</p>
+    </section>
+  </main>
+  <script src="/static/analysis.js" defer></script>
+</body>
+</html>

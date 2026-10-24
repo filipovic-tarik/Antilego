@@ -264,6 +264,7 @@ function renderLiveCharts(history) {
       ${legend}
       ${crossingNote}
       <canvas data-chart-index="${index}" aria-label="${probabilityMode ? "Contract probability" : "Violation"} history for ${escapeHtml(family.name)}"></canvas>
+      ${latest.violating && latest.complete !== false ? `<div class="chart-actions"><a class="analyze-button" href="/analysis.html?family=${encodeURIComponent(family.name)}" target="_blank" rel="noopener">Analyze <span>↗</span></a></div>` : ""}
     </article>`;
   }).join("");
   container.querySelectorAll("canvas").forEach((canvas) => drawChart(canvas, families[Number(canvas.dataset.chartIndex)]));
